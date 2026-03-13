@@ -25,6 +25,10 @@
         <include>
             <directory>src/</directory>
         </include>
+        <exclude>
+            <!-- MomoPlugin is a Composer plugin — integration only, no unit tests -->
+            <file>src/MomoPlugin.php</file>
+        </exclude>
     </source>
 
 </phpunit>
