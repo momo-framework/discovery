@@ -1,6 +1,6 @@
 {
   "name": "momo-framework/discovery",
-  "description": "Composer plugin for Momo Framework package discovery and auto-configuration",
+  "description": "Zero-config local module autodiscovery for Momo Framework",
   "type": "composer-plugin",
   "license": "proprietary",
   "require": {
@@ -36,10 +36,11 @@
   "scripts": {
     "lint": "php-cs-fixer fix --dry-run --diff",
     "lint:fix": "php-cs-fixer fix",
+    "test": "vendor/bin/phpunit",
+    "test:coverage": "vendor/bin/phpunit --coverage-text",
     "stan": "vendor/bin/phpstan analyse src --level=10",
     "rector:check": "rector process --dry-run",
     "rector:fix": "rector process",
-    "test": "vendor/bin/phpunit",
     "ci": [
       "@lint",
       "@stan",
