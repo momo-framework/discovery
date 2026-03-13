@@ -123,18 +123,18 @@ Add to `core/composer.json`:
 
 ---
 
-## Development
+### CI pipeline
 
-```bash
-composer install
-composer test
-composer test:coverage
-composer stan
+```
 composer ci
+  ├── lint          php-cs-fixer --dry-run
+  ├── stan          phpstan level 10
+  ├── rector:check  rector --dry-run
+  └── test          phpunit
 ```
 
 ---
 
 <div align="center">
-  <sub>Part of <a href="https://github.com/momo-framework">Momo Framework</a> — high-performance modular e-commerce engine</sub>
+  <sub>Part of <a href="https://github.com/momo-framework">Momo Framework</a> — a high-performance, modular PHP framework for building resilient distributed systems.</sub>
 </div>
