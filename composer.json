@@ -1,17 +1,50 @@
 {
   "name": "momo-framework/discovery",
+  "description": "Composer plugin for Momo Framework package discovery and auto-configuration",
   "type": "composer-plugin",
+  "license": "proprietary",
   "require": {
-    "php": ">=8.4",
+    "php": ">=8.5",
     "composer-plugin-api": "^2.0"
   },
   "require-dev": {
-    "composer/composer": "^2.0"
+    "composer/composer": "^2.8",
+    "phpunit/phpunit": "^11.0",
+    "phpstan/phpstan": "^2.1",
+    "friendsofphp/php-cs-fixer": "dev-master",
+    "rector/rector": "dev-main"
   },
   "autoload": {
-    "psr-4": { "Momo\\Discovery\\": "src/" }
+    "psr-4": {
+      "Momo\\Discovery\\": "src/"
+    }
+  },
+  "autoload-dev": {
+    "psr-4": {
+      "Momo\\Discovery\\Tests\\": "tests/"
+    }
   },
   "extra": {
     "class": "Momo\\Discovery\\MomoPlugin"
+  },
+  "config": {
+    "allow-plugins": {
+      "infection/extension-installer": true
+    },
+    "sort-packages": true
+  },
+  "scripts": {
+    "lint": "php-cs-fixer fix --dry-run --diff",
+    "lint:fix": "php-cs-fixer fix",
+    "stan": "vendor/bin/phpstan analyse src --level=10",
+    "rector:check": "rector process --dry-run",
+    "rector:fix": "rector process",
+    "test": "vendor/bin/phpunit",
+    "ci": [
+      "@lint",
+      "@stan",
+      "@rector:check",
+      "@test"
+    ]
   }
 }
