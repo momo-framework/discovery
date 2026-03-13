@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="https://avatars.githubusercontent.com/u/255415480?s=200&v=4" alt="Momo Framework" width="96" height="96" />
+  <img src="https://avatars.githubusercontent.com/u/255415480?s=200&v=4" alt="Momo Framework" width="120" height="120" />
 
   <h1>momo-framework/discovery</h1>
 
@@ -119,6 +119,36 @@ Add to `core/composer.json`:
     "classmap-authoritative": false
   }
 }
+```
+
+---
+
+## Development
+
+```bash
+# install dependencies
+composer install
+
+# run tests
+composer test
+
+# run tests with coverage report (requires PCOV or Xdebug)
+composer test:coverage
+
+# static analysis — PHPStan level 10
+composer stan
+
+# code style check
+composer lint
+
+# code style fix
+composer lint:fix
+
+# rector — check for upgrades
+composer rector:check
+
+# run full CI pipeline locally
+composer ci
 ```
 
 ---

@@ -25,10 +25,6 @@ final class ModuleScannerTest extends TestCase
         $this->removeDirectory($this->tmpDir);
     }
 
-    // -------------------------------------------------------------------------
-    // No modules dir
-    // -------------------------------------------------------------------------
-
     #[Test]
     public function returns_empty_when_modules_dir_does_not_exist(): void
     {
@@ -36,10 +32,6 @@ final class ModuleScannerTest extends TestCase
 
         self::assertSame([], $scanner->scan());
     }
-
-    // -------------------------------------------------------------------------
-    // Empty modules dir
-    // -------------------------------------------------------------------------
 
     #[Test]
     public function returns_empty_when_modules_dir_is_empty(): void
@@ -51,10 +43,6 @@ final class ModuleScannerTest extends TestCase
         self::assertSame([], $scanner->scan());
     }
 
-    // -------------------------------------------------------------------------
-    // Module without composer.json
-    // -------------------------------------------------------------------------
-
     #[Test]
     public function skips_module_without_composer_json(): void
     {
@@ -65,9 +53,57 @@ final class ModuleScannerTest extends TestCase
         self::assertSame([], $scanner->scan());
     }
 
-    // -------------------------------------------------------------------------
-    // Module with valid composer.json
-    // -------------------------------------------------------------------------
+    #[Test]
+    public function skips_psr4_entry_with_non_string_namespace(): void
+    {
+        mkdir($this->tmpDir . '/modules/Weird', 0755, true);
+        file_put_contents(
+            $this->tmpDir . '/modules/Weird/composer.json',
+            json_encode([
+                'name' => 'momo-module/weird',
+                'autoload' => [
+                    'psr-4' => [
+                        'Momo\\Module\\Weird\\' => 'src/',
+                    ],
+                ],
+            ], JSON_PRETTY_PRINT),
+        );
+
+        $path = $this->tmpDir . '/modules/Weird/composer.json';
+        $content = file_get_contents($path);
+        file_put_contents($path, str_replace(
+            '"psr-4": {',
+            '"psr-4": [',
+            str_replace(
+                '}',
+                ']',
+                str_replace('"Momo\\\\Module\\\\Weird\\\\": "src/"', '"src/"', $content),
+            ),
+        ));
+
+        $scanner = new ModuleScanner($this->tmpDir);
+        $result = $scanner->scan();
+
+        self::assertArrayNotHasKey(0, $result);
+    }
+
+    #[Test]
+    public function skips_psr4_path_entry_that_is_not_a_string(): void
+    {
+        $this->createModule('BadPaths', [
+            'name' => 'momo-module/bad-paths',
+            'autoload' => [
+                'psr-4' => [
+                    'Momo\\Module\\BadPaths\\' => [null, false, 123],
+                ],
+            ],
+        ]);
+
+        $scanner = new ModuleScanner($this->tmpDir);
+        $result  = $scanner->scan();
+
+        self::assertArrayNotHasKey('Momo\\Module\\BadPaths\\', $result);
+    }
 
     #[Test]
     public function returns_namespace_from_module_composer_json(): void
@@ -119,10 +155,6 @@ final class ModuleScannerTest extends TestCase
         self::assertSame($expectedPath, $result['Momo\\Module\\Shop\\'][0]);
     }
 
-    // -------------------------------------------------------------------------
-    // Multiple modules
-    // -------------------------------------------------------------------------
-
     #[Test]
     public function scans_multiple_modules(): void
     {
@@ -144,10 +176,6 @@ final class ModuleScannerTest extends TestCase
         self::assertCount(2, $result);
     }
 
-    // -------------------------------------------------------------------------
-    // Multiple namespaces in one module
-    // -------------------------------------------------------------------------
-
     #[Test]
     public function handles_multiple_psr4_entries_in_one_module(): void
     {
@@ -168,10 +196,6 @@ final class ModuleScannerTest extends TestCase
         self::assertArrayHasKey('Momo\\Module\\Shop\\Tests\\', $result);
     }
 
-    // -------------------------------------------------------------------------
-    // Module with no autoload section
-    // -------------------------------------------------------------------------
-
     #[Test]
     public function skips_module_with_no_autoload_section(): void
     {
@@ -184,10 +208,6 @@ final class ModuleScannerTest extends TestCase
 
         self::assertSame([], $scanner->scan());
     }
-
-    // -------------------------------------------------------------------------
-    // Invalid composer.json
-    // -------------------------------------------------------------------------
 
     #[Test]
     public function skips_module_with_invalid_json(): void
@@ -203,10 +223,6 @@ final class ModuleScannerTest extends TestCase
         self::assertSame([], $scanner->scan());
     }
 
-    // -------------------------------------------------------------------------
-    // Files in modules dir (not directories) are ignored
-    // -------------------------------------------------------------------------
-
     #[Test]
     public function ignores_files_in_modules_directory(): void
     {
@@ -217,10 +233,6 @@ final class ModuleScannerTest extends TestCase
 
         self::assertSame([], $scanner->scan());
     }
-
-    // -------------------------------------------------------------------------
-    // Array psr-4 paths (multiple paths per namespace)
-    // -------------------------------------------------------------------------
 
     #[Test]
     public function handles_array_psr4_path_value(): void
@@ -241,10 +253,6 @@ final class ModuleScannerTest extends TestCase
         self::assertStringEndsWith('/modules/Shop/src', $result['Momo\\Module\\Shop\\'][0]);
         self::assertStringEndsWith('/modules/Shop/lib', $result['Momo\\Module\\Shop\\'][1]);
     }
-
-    // -------------------------------------------------------------------------
-    // Helpers
-    // -------------------------------------------------------------------------
 
     private function createModule(string $name, array $composerData): void
     {

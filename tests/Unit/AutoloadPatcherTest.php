@@ -180,6 +180,37 @@ final class AutoloadPatcherTest extends TestCase
     }
 
     #[Test]
+    public function skips_existing_file_that_does_not_return_array(): void
+    {
+        file_put_contents($this->psr4File, "<?php\nreturn 'not-an-array';\n");
+
+        $patcher = new AutoloadPatcher($this->vendorDir);
+        $patcher->patch(['Momo\\Module\\Shop\\' => [$this->tmpDir . '/modules/Shop/src']]);
+
+        $result = require $this->psr4File;
+
+        self::assertArrayHasKey('Momo\\Module\\Shop\\', $result);
+        self::assertCount(1, $result);
+    }
+
+    #[Test]
+    public function skips_entry_with_non_string_namespace_key(): void
+    {
+        file_put_contents(
+            $this->psr4File,
+            "<?php\nreturn [0 => ['/some/path'], 'Valid\\\\Ns\\\\' => ['/valid/path']];\n",
+        );
+
+        $patcher = new AutoloadPatcher($this->vendorDir);
+        $patcher->patch([]);
+
+        $result = require $this->psr4File;
+
+        self::assertArrayHasKey('Valid\\Ns\\', $result);
+        self::assertArrayNotHasKey(0, $result);
+    }
+
+    #[Test]
     public function handles_namespace_with_trailing_backslash(): void
     {
         $patcher = new AutoloadPatcher($this->vendorDir);
@@ -187,13 +218,26 @@ final class AutoloadPatcherTest extends TestCase
 
         $result = require $this->psr4File;
 
-        // Key must preserve trailing backslash
         self::assertArrayHasKey('Momo\\Module\\Shop\\', $result);
     }
 
-    // -------------------------------------------------------------------------
-    // Helpers
-    // -------------------------------------------------------------------------
+
+    #[Test]
+    public function skips_entries_with_non_string_namespace_when_reading_existing(): void
+    {
+        file_put_contents(
+            $this->psr4File,
+            "<?php\nreturn ['Valid\\\\Ns\\\\' => ['/some/path'], 'Bad\\\\Ns\\\\' => '/not-an-array'];\n",
+        );
+
+        $patcher = new AutoloadPatcher($this->vendorDir);
+        $patcher->patch([]);
+
+        $result = require $this->psr4File;
+
+        self::assertArrayHasKey('Valid\\Ns\\', $result);
+        self::assertArrayNotHasKey('Bad\\Ns\\', $result);
+    }
 
     /**
      * @param array<string, list<string>> $map
@@ -224,4 +268,5 @@ final class AutoloadPatcherTest extends TestCase
 
         rmdir($dir);
     }
+
 }

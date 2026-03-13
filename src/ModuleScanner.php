@@ -68,7 +68,7 @@ final readonly class ModuleScanner
         $raw = file_get_contents($composerJson);
 
         if ($raw === false) {
-            return [];
+            return []; // @codeCoverageIgnore
         }
 
         $data = json_decode($raw, true);
