@@ -6,9 +6,7 @@
   <p>Zero-config local module autodiscovery for <a href="https://github.com/momo-framework">Momo Framework</a></p>
 
   <p>
-    <a href="https://github.com/momo-framework/discovery/actions/workflows/ci.yml">
-      <img src="https://github.com/momo-framework/discovery/actions/workflows/ci.yml/badge.svg" alt="CI" />
-    </a>
+    <img src="https://github.com/momo-framework/discovery/actions/workflows/ci.yml/badge.svg" alt="CI" />
     <img src="https://img.shields.io/badge/php-%3E%3D8.5-8892bf.svg" alt="PHP Version" />
     <img src="https://img.shields.io/badge/type-composer--plugin-orange.svg" alt="Type" />
     <img src="https://img.shields.io/badge/license-proprietary-red.svg" alt="License" />
