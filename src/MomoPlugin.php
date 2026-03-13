@@ -48,8 +48,8 @@ final class MomoPlugin implements PluginInterface, EventSubscriberInterface
             sprintf(
                 '<info>momo-discovery:</info> injected %d local module namespace(s): %s',
                 count($additions),
-                implode(', ', array_keys($additions))
-            )
+                implode(', ', array_keys($additions)),
+            ),
         );
     }
 }

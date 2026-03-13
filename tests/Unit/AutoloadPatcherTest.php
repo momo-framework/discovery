@@ -200,7 +200,7 @@ final class AutoloadPatcherTest extends TestCase
         $export = var_export($map, true);
         file_put_contents(
             $this->psr4File,
-            "<?php\n\n\$vendorDir = dirname(__DIR__);\n\$baseDir = dirname(\$vendorDir);\n\nreturn {$export};\n"
+            "<?php\n\n\$vendorDir = dirname(__DIR__);\n\$baseDir = dirname(\$vendorDir);\n\nreturn {$export};\n",
         );
     }
 
@@ -212,7 +212,7 @@ final class AutoloadPatcherTest extends TestCase
 
         $files = new \RecursiveIteratorIterator(
             new \RecursiveDirectoryIterator($dir, \FilesystemIterator::SKIP_DOTS),
-            \RecursiveIteratorIterator::CHILD_FIRST
+            \RecursiveIteratorIterator::CHILD_FIRST,
         );
 
         foreach ($files as $file) {

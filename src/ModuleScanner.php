@@ -81,7 +81,7 @@ final class ModuleScanner
 
             $additions[$namespace] = array_map(
                 static fn(string $p): string => $modulePath . '/' . rtrim($p, '/'),
-                $paths
+                $paths,
             );
         }
 

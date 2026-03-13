@@ -195,7 +195,7 @@ final class ModuleScannerTest extends TestCase
         mkdir($this->tmpDir . '/modules/Broken', 0755, true);
         file_put_contents(
             $this->tmpDir . '/modules/Broken/composer.json',
-            '{ this is not valid json }'
+            '{ this is not valid json }',
         );
 
         $scanner = new ModuleScanner($this->tmpDir);
@@ -253,7 +253,7 @@ final class ModuleScannerTest extends TestCase
 
         file_put_contents(
             $moduleDir . '/composer.json',
-            json_encode($composerData, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)
+            json_encode($composerData, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES),
         );
     }
 
@@ -265,7 +265,7 @@ final class ModuleScannerTest extends TestCase
 
         $files = new \RecursiveIteratorIterator(
             new \RecursiveDirectoryIterator($dir, \FilesystemIterator::SKIP_DOTS),
-            \RecursiveIteratorIterator::CHILD_FIRST
+            \RecursiveIteratorIterator::CHILD_FIRST,
         );
 
         foreach ($files as $file) {

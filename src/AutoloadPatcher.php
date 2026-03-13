@@ -69,19 +69,19 @@ final class AutoloadPatcher
         $export = str_replace(
             var_export($vendorDir, true),
             '$vendorDir',
-            $export
+            $export,
         );
 
         $export = str_replace(
             var_export($baseDir . '/', true),
             "\$baseDir . '/",
-            $export
+            $export,
         );
 
         $export = str_replace(
             var_export($baseDir, true),
             '$baseDir',
-            $export
+            $export,
         );
 
         $content = <<<PHP
