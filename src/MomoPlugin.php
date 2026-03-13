@@ -30,7 +30,14 @@ final class MomoPlugin implements PluginInterface, EventSubscriberInterface
     {
         $composer  = $event->getComposer();
         $io        = $event->getIO();
-        $vendorDir = rtrim((string) $composer->getConfig()->get('vendor-dir'), '/');
+        $rawVendorDir = $composer->getConfig()->get('vendor-dir');
+
+        if (!is_string($rawVendorDir)) {
+            $io->writeError('<warning>momo-discovery:</warning> could not determine vendor-dir.');
+            return;
+        }
+
+        $vendorDir = rtrim($rawVendorDir, '/');
         $rootDir   = dirname($vendorDir);
 
         $scanner   = new ModuleScanner($rootDir);

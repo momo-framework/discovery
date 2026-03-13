@@ -14,12 +14,12 @@ use DirectoryIterator;
  * Their composer.json contains ONLY: name, type, autoload, extra.momo.providers.
  * No require section is allowed.
  */
-final class ModuleScanner
+final readonly class ModuleScanner
 {
-    private const MODULES_DIR = 'modules';
+    private const string MODULES_DIR = 'modules';
 
     public function __construct(
-        private readonly string $rootDir,
+        private string $rootDir,
     ) {}
 
     /**
@@ -36,7 +36,11 @@ final class ModuleScanner
         $additions = [];
 
         foreach (new DirectoryIterator($modulesDir) as $entry) {
-            if ($entry->isDot() || !$entry->isDir()) {
+            if ($entry->isDot()) {
+                continue;
+            }
+
+            if (!$entry->isDir()) {
                 continue;
             }
 
@@ -67,22 +71,43 @@ final class ModuleScanner
             return [];
         }
 
-        /** @var array{autoload?: array{'psr-4'?: array<string, string|list<string>>}}|null $data */
         $data = json_decode($raw, true);
 
         if (!is_array($data)) {
             return [];
         }
 
+        $autoload = $data['autoload'] ?? null;
+
+        if (!is_array($autoload)) {
+            return [];
+        }
+
+        $psr4 = $autoload['psr-4'] ?? null;
+
+        if (!is_array($psr4)) {
+            return [];
+        }
+
         $additions = [];
 
-        foreach ($data['autoload']['psr-4'] ?? [] as $namespace => $relativePath) {
+        foreach ($psr4 as $namespace => $relativePath) {
+            if (!is_string($namespace)) {
+                continue;
+            }
+
             $paths = is_array($relativePath) ? $relativePath : [$relativePath];
 
-            $additions[$namespace] = array_map(
-                static fn(string $p): string => $modulePath . '/' . rtrim($p, '/'),
-                $paths,
-            );
+            $resolved = [];
+            foreach ($paths as $p) {
+                if (is_string($p)) {
+                    $resolved[] = $modulePath . '/' . rtrim($p, '/');
+                }
+            }
+
+            if ($resolved !== []) {
+                $additions[$namespace] = $resolved;
+            }
         }
 
         return $additions;

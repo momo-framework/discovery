@@ -13,8 +13,11 @@ use PHPUnit\Framework\TestCase;
 final class AutoloadPatcherTest extends TestCase
 {
     private string $tmpDir;
+
     private string $vendorDir;
+
     private string $composerDir;
+
     private string $psr4File;
 
     protected function setUp(): void

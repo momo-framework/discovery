@@ -20,10 +20,10 @@ namespace Momo\Discovery;
  * The file-based PSR-4 loader (autoload_psr4.php) is always active
  * unless --optimize or --classmap-authoritative flags are used.
  */
-final class AutoloadPatcher
+final readonly class AutoloadPatcher
 {
     public function __construct(
-        private readonly string $vendorDir,
+        private string $vendorDir,
     ) {}
 
     /**
@@ -47,10 +47,29 @@ final class AutoloadPatcher
             return [];
         }
 
-        /** @var mixed $result */
         $result = require $psr4File;
 
-        return is_array($result) ? $result : [];
+        if (!is_array($result)) {
+            return [];
+        }
+
+        $validated = [];
+
+        foreach ($result as $namespace => $paths) {
+            if (!is_string($namespace)) {
+                continue;
+            }
+
+            if (!is_array($paths)) {
+                continue;
+            }
+
+            /** @var list<string> $stringPaths */
+            $stringPaths = array_values(array_filter($paths, is_string(...)));
+            $validated[$namespace] = $stringPaths;
+        }
+
+        return $validated;
     }
 
     /**
@@ -61,11 +80,8 @@ final class AutoloadPatcher
         $vendorDir = $this->vendorDir;
         $baseDir   = dirname($vendorDir);
 
-        // var_export produces correct PHP — no manual escaping needed
         $export = var_export($merged, true);
 
-        // Replace absolute paths with portable expressions
-        // Order matters: replace longer vendorDir string first
         $export = str_replace(
             var_export($vendorDir, true),
             '$vendorDir',
