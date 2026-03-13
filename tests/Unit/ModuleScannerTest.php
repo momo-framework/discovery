@@ -57,34 +57,16 @@ final class ModuleScannerTest extends TestCase
     public function skips_psr4_entry_with_non_string_namespace(): void
     {
         mkdir($this->tmpDir . '/modules/Weird', 0755, true);
+
         file_put_contents(
             $this->tmpDir . '/modules/Weird/composer.json',
-            json_encode([
-                'name' => 'momo-module/weird',
-                'autoload' => [
-                    'psr-4' => [
-                        'Momo\\Module\\Weird\\' => 'src/',
-                    ],
-                ],
-            ], JSON_PRETTY_PRINT),
+            '{"name":"momo-module/weird","autoload":{"psr-4":["src/"]}}',
         );
 
-        $path = $this->tmpDir . '/modules/Weird/composer.json';
-        $content = file_get_contents($path);
-        file_put_contents($path, str_replace(
-            '"psr-4": {',
-            '"psr-4": [',
-            str_replace(
-                '}',
-                ']',
-                str_replace('"Momo\\\\Module\\\\Weird\\\\": "src/"', '"src/"', $content),
-            ),
-        ));
-
         $scanner = new ModuleScanner($this->tmpDir);
-        $result = $scanner->scan();
+        $result  = $scanner->scan();
 
-        self::assertArrayNotHasKey(0, $result);
+        self::assertSame([], $result);
     }
 
     #[Test]
@@ -136,6 +118,21 @@ final class ModuleScannerTest extends TestCase
         $result  = $scanner->scan();
 
         self::assertStringEndsNotWith('/', $result['Momo\\Module\\Billing\\'][0]);
+    }
+
+    #[Test]
+    public function skips_module_with_no_psr4_section(): void
+    {
+        $this->createModule('NoPsr4', [
+            'name'     => 'momo-module/no-psr4',
+            'autoload' => [
+                'classmap' => ['src/'],
+            ],
+        ]);
+
+        $scanner = new ModuleScanner($this->tmpDir);
+
+        self::assertSame([], $scanner->scan());
     }
 
     #[Test]

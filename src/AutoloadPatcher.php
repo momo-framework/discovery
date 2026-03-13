@@ -5,20 +5,15 @@ declare(strict_types=1);
 namespace Momo\Discovery;
 
 /**
- * Patches vendor/composer/autoload_psr4.php by merging
- * local module namespaces into the existing Composer autoload map.
+ * AutoloadPatcher
  *
- * Strategy:
- * - Read existing autoload_psr4.php via require (safe, returns array)
- * - Merge local module additions (local wins on conflict)
- * - Write back using var_export — guaranteed valid PHP syntax
- * - Replace absolute paths with $baseDir/$vendorDir expressions
- *   so the file remains portable across environments
+ * Injects local module namespaces into the Composer-generated PSR-4 map.
+ * * DESIGN DECISION: We intentionally avoid patching 'autoload_static.php' as regex-based
+ * modification of generated PHP classes is prone to parse errors and breakages across
+ * different Composer versions. Modifying the array-based 'autoload_psr4.php' is safer
+ * and persistent across standard environment changes.
  *
- * We intentionally do NOT patch autoload_static.php — regex-patching
- * a generated PHP class is fragile and caused parse errors in the past.
- * The file-based PSR-4 loader (autoload_psr4.php) is always active
- * unless --optimize or --classmap-authoritative flags are used.
+ * @internal Core discovery component.
  */
 final readonly class AutoloadPatcher
 {
@@ -27,7 +22,12 @@ final readonly class AutoloadPatcher
     ) {}
 
     /**
-     * @param array<string, list<string>> $additions
+     * Apply namespace additions to the PSR-4 configuration.
+     *
+     * Merges provided namespaces with existing ones. Local module definitions
+     * take precedence over vendor packages in case of a namespace conflict.
+     *
+     * @param array<string, list<string>> $additions Map of [Namespace\ => [Paths]]
      */
     public function patch(array $additions): void
     {
@@ -39,7 +39,13 @@ final readonly class AutoloadPatcher
     }
 
     /**
-     * @return array<string, list<string>>
+     * Read the existing PSR-4 map from the Composer file.
+     *
+     * Uses 'require' to load the file, which is safe since autoload_psr4.php
+     * is a generated file that returns a simple PHP array.
+     *
+     * @param string $psr4File Path to autoload_psr4.php
+     * @return array<string, list<string>> Validated PSR-4 map.
      */
     private function readExisting(string $psr4File): array
     {
@@ -73,7 +79,13 @@ final readonly class AutoloadPatcher
     }
 
     /**
-     * @param array<string, list<string>> $merged
+     * Persist the merged PSR-4 map back to disk.
+     *
+     * Generates portable PHP code by replacing absolute system paths with
+     * expressions based on $vendorDir and $baseDir.
+     *
+     * @param string $psr4File Target file path.
+     * @param array<string, list<string>> $merged The complete map to write.
      */
     private function write(string $psr4File, array $merged): void
     {
