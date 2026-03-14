@@ -8,10 +8,6 @@ namespace Momo\Discovery;
  * AutoloadPatcher
  *
  * Injects local module namespaces into the Composer-generated PSR-4 map.
- * * DESIGN DECISION: We intentionally avoid patching 'autoload_static.php' as regex-based
- * modification of generated PHP classes is prone to parse errors and breakages across
- * different Composer versions. Modifying the array-based 'autoload_psr4.php' is safer
- * and persistent across standard environment changes.
  *
  * @internal Core discovery component.
  */
@@ -24,25 +20,25 @@ final readonly class AutoloadPatcher
     /**
      * Apply namespace additions to the PSR-4 configuration.
      *
-     * Merges provided namespaces with existing ones. Local module definitions
-     * take precedence over vendor packages in case of a namespace conflict.
-     *
      * @param array<string, list<string>> $additions Map of [Namespace\ => [Paths]]
      */
     public function patch(array $additions): void
     {
         $psr4File = $this->vendorDir . '/composer/autoload_psr4.php';
+        $staticFile = $this->vendorDir . '/composer/autoload_static.php';
+        
         $existing = $this->readExisting($psr4File);
-        $merged   = array_merge($existing, $additions);
+        $merged = array_merge($existing, $additions);
 
-        $this->write($psr4File, $merged);
+        $this->writePsr4File($psr4File, $merged);
+        
+        if (file_exists($staticFile)) {
+            $this->patchStaticFile($staticFile, $additions);
+        }
     }
 
     /**
      * Read the existing PSR-4 map from the Composer file.
-     *
-     * Uses 'require' to load the file, which is safe since autoload_psr4.php
-     * is a generated file that returns a simple PHP array.
      *
      * @param string $psr4File Path to autoload_psr4.php
      * @return array<string, list<string>> Validated PSR-4 map.
@@ -70,7 +66,6 @@ final readonly class AutoloadPatcher
                 continue;
             }
 
-            /** @var list<string> $stringPaths */
             $stringPaths = array_values(array_filter($paths, is_string(...)));
             $validated[$namespace] = $stringPaths;
         }
@@ -79,18 +74,15 @@ final readonly class AutoloadPatcher
     }
 
     /**
-     * Persist the merged PSR-4 map back to disk.
-     *
-     * Generates portable PHP code by replacing absolute system paths with
-     * expressions based on $vendorDir and $baseDir.
+     * Write the merged PSR-4 map to autoload_psr4.php.
      *
      * @param string $psr4File Target file path.
      * @param array<string, list<string>> $merged The complete map to write.
      */
-    private function write(string $psr4File, array $merged): void
+    private function writePsr4File(string $psr4File, array $merged): void
     {
         $vendorDir = $this->vendorDir;
-        $baseDir   = dirname($vendorDir);
+        $baseDir = dirname($vendorDir);
 
         $export = var_export($merged, true);
 
@@ -125,5 +117,79 @@ final readonly class AutoloadPatcher
             PHP;
 
         file_put_contents($psr4File, $content);
+    }
+
+    /**
+     * Patch the optimized autoload_static.php file to include local modules.
+     *
+     * @param string $staticFile Path to autoload_static.php
+     * @param array<string, list<string>> $additions Namespaces to add
+     */
+    private function patchStaticFile(string $staticFile, array $additions): void
+    {
+        $content = file_get_contents($staticFile);
+        if ($content === false) {
+            return;
+        }
+
+        $baseDir = dirname($this->vendorDir);
+
+        // Include the file to get current values
+        $staticClass = require $staticFile;
+        if (!is_object($staticClass)) {
+            return;
+        }
+
+        $className = $staticClass::class;
+        
+        // Get current values via reflection
+        $lengthsProp = new \ReflectionProperty($className, 'prefixLengthsPsr4');
+        $dirsProp = new \ReflectionProperty($className, 'prefixDirsPsr4');
+        
+        $existingLengths = $lengthsProp->getValue();
+        $existingDirs = $dirsProp->getValue();
+
+        // Merge additions
+        foreach ($additions as $namespace => $paths) {
+            $firstChar = $namespace[0];
+            $existingLengths[$firstChar][$namespace] = strlen($namespace);
+            
+            $absolutePaths = [];
+            foreach ($paths as $path) {
+                $absolutePaths[] = str_replace($baseDir . '/', '__DIR__ . \'/..\' . \'/', $path) . '\'';
+            }
+            $existingDirs[$firstChar][$namespace] = $absolutePaths;
+        }
+
+        // Regenerate the arrays
+        $lengthsExport = $this->exportArray($existingLengths);
+        $dirsExport = $this->exportArray($existingDirs);
+
+        // Replace in content
+        $content = preg_replace(
+            '/public static \$prefixLengthsPsr4 = array \([^;]+\);/s',
+            'public static $prefixLengthsPsr4 = ' . $lengthsExport . ';',
+            $content
+        );
+
+        $content = preg_replace(
+            '/public static \$prefixDirsPsr4 = array \([^;]+\);/s',
+            'public static $prefixDirsPsr4 = ' . $dirsExport . ';',
+            $content
+        );
+
+        file_put_contents($staticFile, $content);
+    }
+
+    /**
+     * Export an array in the same format as Composer's static file.
+     *
+     * @param array<string, mixed> $array
+     * @return string
+     */
+    private function exportArray(array $array): string
+    {
+        $export = var_export($array, true);
+        return "array ($export)";
     }
 }
