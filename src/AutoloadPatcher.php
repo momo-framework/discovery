@@ -134,62 +134,125 @@ final readonly class AutoloadPatcher
 
         $baseDir = dirname($this->vendorDir);
 
-        // Include the file to get current values
-        $staticClass = require $staticFile;
-        if (!is_object($staticClass)) {
-            return;
-        }
-
-        $className = $staticClass::class;
-        
-        // Get current values via reflection
-        $lengthsProp = new \ReflectionProperty($className, 'prefixLengthsPsr4');
-        $dirsProp = new \ReflectionProperty($className, 'prefixDirsPsr4');
-        
-        $existingLengths = $lengthsProp->getValue();
-        $existingDirs = $dirsProp->getValue();
-
-        // Merge additions
         foreach ($additions as $namespace => $paths) {
             $firstChar = $namespace[0];
-            $existingLengths[$firstChar][$namespace] = strlen($namespace);
-            
-            $absolutePaths = [];
+            $namespaceLength = strlen($namespace);
+            $escapedNamespace = str_replace('\\', '\\\\', $namespace);
+
+            // Build path strings - use __DIR__ . '/../..' to go from vendor/composer to project root
+            $pathStrings = [];
             foreach ($paths as $path) {
-                $absolutePaths[] = str_replace($baseDir . '/', '__DIR__ . \'/..\' . \'/', $path) . '\'';
+                $pathStrings[] = str_replace($baseDir . '/', '__DIR__ . \'/../..\' . \'/', $path) . '\'';
             }
-            $existingDirs[$firstChar][$namespace] = $absolutePaths;
+
+            // First pass: insert into prefixLengthsPsr4
+            $content = $this->insertIntoSection(
+                $content,
+                'public static $prefixLengthsPsr4',
+                $firstChar,
+                $escapedNamespace,
+                "'$escapedNamespace' => $namespaceLength,\n"
+            );
+
+            // Second pass: insert into prefixDirsPsr4
+            $pathsFormatted = '';
+            foreach ($pathStrings as $i => $p) {
+                $pathsFormatted .= "                $i => $p,\n";
+            }
+            $content = $this->insertIntoSection(
+                $content,
+                'public static $prefixDirsPsr4',
+                $firstChar,
+                $escapedNamespace,
+                "'$escapedNamespace' => array(\n$pathsFormatted            ),\n"
+            );
         }
-
-        // Regenerate the arrays
-        $lengthsExport = $this->exportArray($existingLengths);
-        $dirsExport = $this->exportArray($existingDirs);
-
-        // Replace in content
-        $content = preg_replace(
-            '/public static \$prefixLengthsPsr4 = array \([^;]+\);/s',
-            'public static $prefixLengthsPsr4 = ' . $lengthsExport . ';',
-            $content
-        );
-
-        $content = preg_replace(
-            '/public static \$prefixDirsPsr4 = array \([^;]+\);/s',
-            'public static $prefixDirsPsr4 = ' . $dirsExport . ';',
-            $content
-        );
 
         file_put_contents($staticFile, $content);
     }
 
     /**
-     * Export an array in the same format as Composer's static file.
-     *
-     * @param array<string, mixed> $array
-     * @return string
+     * Insert a namespace entry into a specific section of the static file.
      */
-    private function exportArray(array $array): string
-    {
-        $export = var_export($array, true);
-        return "array ($export)";
+    private function insertIntoSection(
+        string $content,
+        string $sectionMarker,
+        string $firstChar,
+        string $escapedNamespace,
+        string $insertion
+    ): string {
+        // Find the section boundaries
+        $sectionStartPos = strpos($content, $sectionMarker);
+        if ($sectionStartPos === false) {
+            return $content;
+        }
+
+        // Find the next "public static" or end of class to determine section end
+        $nextSectionPos = strpos($content, 'public static $', $sectionStartPos + strlen($sectionMarker));
+        if ($nextSectionPos === false) {
+            // Last section - find the closing of the class property
+            $nextSectionPos = strpos($content, '};', $sectionStartPos);
+        }
+        
+        $sectionContent = substr($content, $sectionStartPos, $nextSectionPos - $sectionStartPos);
+        
+        if (strpos($sectionContent, "'$escapedNamespace'") !== false) {
+            return $content; // Already exists in this section
+        }
+
+        $lines = explode("\n", $content);
+        $inSection = false;
+        $inserted = false;
+        $lastMatchingCharLine = -1;
+
+        for ($i = 0; $i < count($lines); $i++) {
+            $line = $lines[$i];
+
+            // Detect section start
+            if (strpos($line, $sectionMarker) !== false) {
+                $inSection = true;
+                continue;
+            }
+
+            // End of section - look for next public static or end
+            if ($inSection && strpos($line, 'public static $') !== false) {
+                break;
+            }
+
+            // For prefixLengthsPsr4: find the first char section - 'M' => on one line
+            if ($sectionMarker === 'public static $prefixLengthsPsr4') {
+                if ($inSection && trim($line) === "'$firstChar' =>") {
+                    $lastMatchingCharLine = $i;
+                    continue;
+                }
+
+                // Insert after finding the char section, before the closing ),
+                if ($lastMatchingCharLine >= 0 && !$inserted && trim($line) === '),') {
+                    array_splice($lines, $i, 0, "            $insertion");
+                    $inserted = true;
+                    break;
+                }
+            }
+            // For prefixDirsPsr4: each namespace is a separate entry
+            else {
+                $trimmedLine = trim($line);
+                if ($inSection && strpos($trimmedLine, "'$firstChar") === 0 && strpos($trimmedLine, "' =>") !== false) {
+                    $lastMatchingCharLine = $i;
+                    continue;
+                }
+
+                // Insert AFTER the last namespace starting with $firstChar
+                // We need to insert after the closing ), of that namespace
+                if ($lastMatchingCharLine >= 0 && !$inserted && trim($line) === '),') {
+                    // Insert AFTER this line
+                    $insertionWithNewline = "\n            $insertion";
+                    array_splice($lines, $i + 1, 0, $insertionWithNewline);
+                    $inserted = true;
+                    break;
+                }
+            }
+        }
+
+        return implode("\n", $lines);
     }
 }
