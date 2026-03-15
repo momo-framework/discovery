@@ -6,11 +6,6 @@ namespace Momo\Discovery;
 
 use DirectoryIterator;
 
-/**
- * Scans 'modules/' for PSR-4 metadata.
- * * CONSTRAINT: Local modules share the root vendor/.
- * They MUST NOT contain a 'require' section in their composer.json.
- */
 final readonly class ModuleScanner
 {
     private const string MODULES_DIR = 'modules';
@@ -19,14 +14,6 @@ final readonly class ModuleScanner
         private string $rootDir,
     ) {}
 
-    /**
-     * Start the scanning process.
-     *
-     * Iterates through the modules directory, finds valid module folders,
-     * and aggregates their PSR-4 namespace mappings.
-     *
-     * @return array<string, list<string>> Map of [Namespace\ => [Absolute/Path]]
-     */
     public function scan(): array
     {
         $modulesDir = $this->rootDir . '/' . self::MODULES_DIR;
@@ -57,13 +44,6 @@ final readonly class ModuleScanner
     }
 
     /**
-     * Extract autoload metadata from a single module.
-     *
-     * Reads the module's composer.json and resolves relative PSR-4 paths
-     * into absolute system paths based on the module's location.
-     *
-     * @param string $modulePath Full path to the module directory.
-     * @return array<string, list<string>>
      * @codeCoverageIgnore
      */
     private function scanModule(string $modulePath): array
