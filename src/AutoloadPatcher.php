@@ -5,47 +5,69 @@ declare(strict_types=1);
 namespace Momo\Discovery;
 
 /**
- * AutoloadPatcher
+ * Injects local module namespaces into the Composer-generated autoloader files.
  *
- * Injects local module namespaces into the Composer-generated PSR-4 map.
+ * Composer knows nothing about modules that live outside `vendor/` — they have
+ * no entry in `installed.json` and therefore no PSR-4 mapping in its generated
+ * files. This class fixes that after every `composer dump-autoload` by patching
+ * two files:
  *
- * Strategy:
- *   1. autoload_psr4.php  — rewritten from scratch with merged data (safe, we own the format).
- *   2. autoload_static.php — regenerated programmatically from the merged PSR-4 map,
- *      avoiding brittle string-search/replace on Composer's generated code.
+ * **autoload_psr4.php** — used by the default dynamic class loader. We own the
+ * format, so we rewrite it from scratch with the merged namespace map.
  *
- * @internal Core discovery component.
+ * **autoload_real.php** — used by every loader variant (dynamic, optimised,
+ * classmap-authoritative). Its `getLoader()` factory always runs at process
+ * start and returns the fully configured `ClassLoader` instance. We inject
+ * `$loader->addPsr4(...)` calls just before `return $loader;`. This is the
+ * only injection point that survives `--optimize` and `--classmap-authoritative`
+ * without touching `autoload_static.php`, whose format is not part of any
+ * stable Composer contract.
+ *
+ * Both patches are idempotent. A marker comment guards the injected block so
+ * the next `composer dump-autoload` starts clean and this plugin re-injects.
+ *
+ * @internal
  */
 final readonly class AutoloadPatcher
 {
+    /**
+     * Marks the start of the injected block inside autoload_real.php.
+     * Must not contain characters that break PHP single-line comments.
+     */
+    private const string HOOK_MARKER = '// momo-discovery:patched';
+
     public function __construct(
         private string $vendorDir,
     ) {}
 
     /**
-     * Apply namespace additions to the PSR-4 configuration.
+     * Patch the Composer autoloader files to include the given namespace map.
      *
-     * @param array<string, list<string>> $additions Map of [Namespace\ => [Paths]]
+     * Existing Composer namespaces are preserved; local module entries win
+     * on key collision (local overrides vendor for the same namespace).
+     *
+     * @param array<string, list<string>> $additions  namespace → absolute paths
      */
     public function patch(array $additions): void
     {
-        $psr4File   = $this->vendorDir . '/composer/autoload_psr4.php';
-        $staticFile = $this->vendorDir . '/composer/autoload_static.php';
+        $psr4File = $this->vendorDir . '/composer/autoload_psr4.php';
+        $realFile = $this->vendorDir . '/autoload_real.php';
 
-        $existing = $this->readExisting($psr4File);
-        $merged   = array_merge($existing, $additions);
-
+        $merged = array_merge($this->readExisting($psr4File), $additions);
         $this->writePsr4File($psr4File, $merged);
 
-        if (file_exists($staticFile)) {
-            $this->regenerateStaticFile($staticFile, $merged);
+        if (file_exists($realFile)) {
+            $this->hookRealFile($realFile, $additions);
         }
     }
 
-    // ── Read ──────────────────────────────────────────────────────────────────
+    // ── autoload_psr4.php ─────────────────────────────────────────────────────
 
     /**
-     * Read and validate the existing PSR-4 map.
+     * Read and validate the current PSR-4 map from autoload_psr4.php.
+     *
+     * Returns an empty map when the file is absent or returns a non-array —
+     * both are treated as "start fresh".
      *
      * @return array<string, list<string>>
      */
@@ -82,13 +104,12 @@ final readonly class AutoloadPatcher
         return $validated;
     }
 
-    // ── Write autoload_psr4.php ───────────────────────────────────────────────
-
     /**
-     * Write the merged PSR-4 map to autoload_psr4.php.
+     * Write the merged namespace map to autoload_psr4.php.
      *
-     * Replaces absolute vendor/base dir paths with $vendorDir / $baseDir
-     * variables so the file is portable across machines.
+     * Absolute paths that share a common prefix with the project root or
+     * vendor directory are expressed through `$baseDir` / `$vendorDir`
+     * variables so the generated file is portable across machines.
      *
      * @param array<string, list<string>> $merged
      */
@@ -117,167 +138,116 @@ final readonly class AutoloadPatcher
         file_put_contents($psr4File, $content);
     }
 
-    // ── Regenerate autoload_static.php ────────────────────────────────────────
+    // ── autoload_real.php ─────────────────────────────────────────────────────
 
     /**
-     * Regenerate autoload_static.php by reading the existing file's class name
-     * and other static maps, then rebuilding the PSR-4 sections from scratch.
+     * Inject `$loader->addPsr4()` calls into `ComposerAutoloaderInit*::getLoader()`.
      *
-     * This avoids all string-search/replace on Composer's generated code.
-     * Only the PSR-4 sections are replaced; classmap, files, etc. are preserved
-     * verbatim from the original file.
+     * The injected block is placed immediately before the final `return $loader;`
+     * statement so the `ClassLoader` instance receives the module namespaces
+     * before it is returned to the application — regardless of whether the
+     * static optimised loader or the dynamic loader is active.
      *
-     * @param array<string, list<string>> $merged Complete merged PSR-4 map
+     * The block is wrapped in a marker comment. On re-injection the old block is
+     * stripped first, preventing duplicate entries across multiple `dump-autoload`
+     * runs within the same process (e.g. during tests).
+     *
+     * Silently skips when:
+     * - the file is not readable (`file_get_contents` returns false)
+     * - `return $loader;` is not found — the file format is unrecognised
+     *
+     * @param array<string, list<string>> $additions  namespace → absolute paths
      */
-    private function regenerateStaticFile(string $staticFile, array $merged): void
+    private function hookRealFile(string $realFile, array $additions): void
     {
-        $original = file_get_contents($staticFile);
-        if ($original === false) {
+        $content = file_get_contents($realFile);
+
+        if ($content === false) {
             return;
         }
 
-        // Extract the class name Composer generated (e.g. ComposerStaticInit1234abc)
-        if (!preg_match('/class\s+(ComposerStaticInit\w+)/', $original, $m)) {
+        $content   = $this->stripPreviousHook($content);
+        $insertPos = strrpos($content, 'return $loader;');
+
+        if ($insertPos === false) {
             return;
         }
 
-        $baseDir   = dirname($this->vendorDir);
+        $hook    = $this->buildHook($additions, dirname($this->vendorDir));
+        $content = substr($content, 0, $insertPos)
+            . $hook
+            . substr($content, $insertPos);
 
-        // Build prefixLengthsPsr4: grouped by first character
-        $prefixLengths = $this->buildPrefixLengths($merged);
-
-        // Build prefixDirsPsr4: namespace => [absolute paths]
-        $prefixDirs = $this->buildPrefixDirs($merged, $baseDir);
-
-        // Replace only the two PSR-4 sections in the original file
-        $content = $this->replacePsr4Section(
-            $original,
-            'prefixLengthsPsr4',
-            $this->renderPrefixLengths($prefixLengths),
-        );
-
-        $content = $this->replacePsr4Section(
-            $content,
-            'prefixDirsPsr4',
-            $this->renderPrefixDirs($prefixDirs),
-        );
-
-        file_put_contents($staticFile, $content);
+        file_put_contents($realFile, $content);
     }
 
     /**
-     * Build the prefix-lengths map grouped by first character.
+     * Remove a previously injected hook block from raw file content.
      *
-     * @param  array<string, list<string>> $merged
-     * @return array<string, array<string, int>>
+     * The block starts at {@see HOOK_MARKER} and ends at (but does not include)
+     * the `return $loader;` statement that follows it. When either boundary is
+     * absent the content is returned unchanged.
      */
-    private function buildPrefixLengths(array $merged): array
+    private function stripPreviousHook(string $content): string
     {
-        $result = [];
+        $start = strpos($content, self::HOOK_MARKER);
 
-        foreach (array_keys($merged) as $namespace) {
-            $char = $namespace[0];
-            $result[$char][$namespace] = strlen($namespace);
+        if ($start === false) {
+            return $content;
         }
 
-        ksort($result);
+        $end = strpos($content, 'return $loader;', $start);
 
-        return $result;
+        if ($end === false) {
+            return $content;
+        }
+
+        return substr($content, 0, $start) . substr($content, $end);
     }
 
     /**
-     * Build the prefix-dirs map with paths relative to $baseDir.
+     * Build the PHP source block that registers all local module namespaces.
      *
-     * Paths that live inside $baseDir are expressed as
-     * __DIR__ . '/../../relative/path' so the file stays portable.
-     * Paths outside $baseDir are kept as absolute strings.
+     * Paths inside the project root are expressed as `__DIR__ . '/../<rel>'`
+     * (where `__DIR__` resolves to `vendor/` at runtime) to keep the snippet
+     * portable. Paths outside the project root are kept as absolute literals.
      *
-     * @param  array<string, list<string>> $merged
-     * @return array<string, list<string>>  namespace => [path expressions]
+     * Example output:
+     *
+     * ```php
+     * // momo-discovery:patched — do not edit, regenerated on dump-autoload
+     *         $loader->addPsr4('Momo\\Module\\Shop\\', [__DIR__ . '/../modules/Shop/src']);
+     *         $loader->addPsr4('Momo\\Module\\Billing\\', [__DIR__ . '/../modules/Billing/src']);
+     * ```
+     *
+     * @param array<string, list<string>> $additions
      */
-    private function buildPrefixDirs(array $merged, string $baseDir): array
+    private function buildHook(array $additions, string $baseDir): string
     {
-        $result = [];
+        $lines   = [];
+        $lines[] = self::HOOK_MARKER . ' — do not edit, regenerated on dump-autoload';
 
-        foreach ($merged as $namespace => $paths) {
-            $expressions = [];
+        foreach ($additions as $namespace => $paths) {
+            $pathExprs = [];
 
             foreach ($paths as $path) {
-                // vendor/composer is two levels deep from $baseDir
                 if (str_starts_with($path, $baseDir . '/')) {
-                    $relative     = substr($path, strlen($baseDir) + 1);
-                    $expressions[] = "__DIR__ . '/../../" . $relative . "'";
+                    $relative    = substr($path, strlen($baseDir) + 1);
+                    $pathExprs[] = "__DIR__ . '/../" . $relative . "'";
                 } else {
-                    // Absolute path outside project root — keep as-is
-                    $expressions[] = var_export($path, true);
+                    $pathExprs[] = var_export($path, true);
                 }
             }
 
-            $result[$namespace] = $expressions;
+            $lines[] = sprintf(
+                "        \$loader->addPsr4(%s, [%s]);",
+                var_export($namespace, true),
+                implode(', ', $pathExprs),
+            );
         }
 
-        return $result;
-    }
-
-    /**
-     * Render the prefixLengthsPsr4 array body.
-     *
-     * @param array<string, array<string, int>> $prefixLengths
-     */
-    private function renderPrefixLengths(array $prefixLengths): string
-    {
-        $lines = [];
-
-        foreach ($prefixLengths as $char => $entries) {
-            $lines[] = sprintf("        '%s' => array(", $char);
-            foreach ($entries as $namespace => $length) {
-                $escaped = str_replace('\\', '\\\\', $namespace);
-                $lines[] = sprintf("            '%s' => %d,", $escaped, $length);
-            }
-
-            $lines[] = "        ),";
-        }
+        $lines[] = '';
 
         return implode("\n", $lines);
-    }
-
-    /**
-     * Render the prefixDirsPsr4 array body.
-     *
-     * @param array<string, list<string>> $prefixDirs  namespace => [path expressions]
-     */
-    private function renderPrefixDirs(array $prefixDirs): string
-    {
-        $lines = [];
-
-        foreach ($prefixDirs as $namespace => $expressions) {
-            $escaped = str_replace('\\', '\\\\', $namespace);
-            $lines[] = sprintf("        '%s' => array(", $escaped);
-            foreach ($expressions as $i => $expr) {
-                $lines[] = sprintf('            %d => %s,', $i, $expr);
-            }
-
-            $lines[] = "        ),";
-        }
-
-        return implode("\n", $lines);
-    }
-
-    /**
-     * Replace a single PSR-4 section in the static file content.
-     * and replaces the inner content with $replacement.
-     */
-    private function replacePsr4Section(
-        string $content,
-        string $propertyName,
-        string $replacement,
-    ): string {
-        $pattern = '/(public\s+static\s+\$' . preg_quote($propertyName, '/') . '\s*=\s*array\s*\()([^;]*?)(\);)/s';
-
-        return preg_replace(
-            $pattern,
-            '$1' . "\n" . $replacement . "\n    " . '$3',
-            $content,
-        ) ?? $content;
     }
 }

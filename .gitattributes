@@ -1,6 +1,7 @@
 /tests/                     export-ignore
 /build/                     export-ignore
 /.github/                   export-ignore
+/.phpunit.cache             export-ignore
 /.php-cs-fixer.dist.php     export-ignore
 /rector.php                 export-ignore
 /phpunit.xml                export-ignore
@@ -9,4 +10,3 @@
 /src/                       export-all
 /README.md                  export-all
 /composer.json              export-all
-/LICENSE                    export-all
