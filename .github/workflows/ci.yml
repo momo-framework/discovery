@@ -6,28 +6,42 @@ on:
   pull_request:
     branches: [ main ]
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
-  build:
+  tests:
+    name: "PHP ${{ matrix.php }} — Tests & Coverage"
     runs-on: ubuntu-latest
+
     strategy:
+      fail-fast: false
       matrix:
-        php: ['8.5']
+        php: [ '8.5' ]
 
     steps:
-      - name: Checkout code
+      - name: "Checkout: discovery"
         uses: actions/checkout@v4
+        with:
+          path: bus
+          fetch-depth: 0
 
-      - name: Setup PHP
+      - name: "Setup PHP ${{ matrix.php }} with extensions"
         uses: shivammathur/setup-php@v2
         with:
           php-version: ${{ matrix.php }}
-          extensions: mbstring, xml, ctype, iconv, pcov
+          extensions: mbstring, xml, ctype, iconv, pcov, sockets
           coverage: pcov
+          ini-values: >-
+            pcov.directory=src,
+            opcache.enable_cli=1,
+            opcache.jit=0
 
-      - name: Install Dependencies
+      - name: "Install dependencies"
+        working-directory: bus
         run: |
-          # Учитываем, что пакеты зависят друг от друга
-          composer install --prefer-dist --no-progress
+          composer install --prefer-dist --no-progress --no-interaction --ansi
 
-      - name: CI
+      - name: "Run test suite"
+        working-directory: bus
         run: composer ci

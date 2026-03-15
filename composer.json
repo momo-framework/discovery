@@ -9,7 +9,7 @@
   },
   "require-dev": {
     "composer/composer": "^2.8",
-    "phpunit/phpunit": "^11.0",
+    "phpunit/phpunit": "^13.0",
     "phpstan/phpstan": "^2.1",
     "friendsofphp/php-cs-fixer": "dev-master",
     "rector/rector": "dev-main"

@@ -9,6 +9,11 @@ namespace Momo\Discovery;
  *
  * Injects local module namespaces into the Composer-generated PSR-4 map.
  *
+ * Strategy:
+ *   1. autoload_psr4.php  — rewritten from scratch with merged data (safe, we own the format).
+ *   2. autoload_static.php — regenerated programmatically from the merged PSR-4 map,
+ *      avoiding brittle string-search/replace on Composer's generated code.
+ *
  * @internal Core discovery component.
  */
 final readonly class AutoloadPatcher
@@ -24,24 +29,25 @@ final readonly class AutoloadPatcher
      */
     public function patch(array $additions): void
     {
-        $psr4File = $this->vendorDir . '/composer/autoload_psr4.php';
+        $psr4File   = $this->vendorDir . '/composer/autoload_psr4.php';
         $staticFile = $this->vendorDir . '/composer/autoload_static.php';
-        
+
         $existing = $this->readExisting($psr4File);
-        $merged = array_merge($existing, $additions);
+        $merged   = array_merge($existing, $additions);
 
         $this->writePsr4File($psr4File, $merged);
-        
+
         if (file_exists($staticFile)) {
-            $this->patchStaticFile($staticFile, $additions);
+            $this->regenerateStaticFile($staticFile, $merged);
         }
     }
 
+    // ── Read ──────────────────────────────────────────────────────────────────
+
     /**
-     * Read the existing PSR-4 map from the Composer file.
+     * Read and validate the existing PSR-4 map.
      *
-     * @param string $psr4File Path to autoload_psr4.php
-     * @return array<string, list<string>> Validated PSR-4 map.
+     * @return array<string, list<string>>
      */
     private function readExisting(string $psr4File): array
     {
@@ -67,42 +73,34 @@ final readonly class AutoloadPatcher
             }
 
             $stringPaths = array_values(array_filter($paths, is_string(...)));
-            $validated[$namespace] = $stringPaths;
+
+            if ($stringPaths !== []) {
+                $validated[$namespace] = $stringPaths;
+            }
         }
 
         return $validated;
     }
 
+    // ── Write autoload_psr4.php ───────────────────────────────────────────────
+
     /**
      * Write the merged PSR-4 map to autoload_psr4.php.
      *
-     * @param string $psr4File Target file path.
-     * @param array<string, list<string>> $merged The complete map to write.
+     * Replaces absolute vendor/base dir paths with $vendorDir / $baseDir
+     * variables so the file is portable across machines.
+     *
+     * @param array<string, list<string>> $merged
      */
     private function writePsr4File(string $psr4File, array $merged): void
     {
         $vendorDir = $this->vendorDir;
-        $baseDir = dirname($vendorDir);
+        $baseDir   = dirname($vendorDir);
 
         $export = var_export($merged, true);
-
-        $export = str_replace(
-            var_export($vendorDir, true),
-            '$vendorDir',
-            $export,
-        );
-
-        $export = str_replace(
-            var_export($baseDir . '/', true),
-            "\$baseDir . '/",
-            $export,
-        );
-
-        $export = str_replace(
-            var_export($baseDir, true),
-            '$baseDir',
-            $export,
-        );
+        $export = str_replace(var_export($vendorDir, true), '$vendorDir', $export);
+        $export = str_replace(var_export($baseDir . '/', true), "\$baseDir . '/", $export);
+        $export = str_replace(var_export($baseDir, true), '$baseDir', $export);
 
         $content = <<<PHP
             <?php
@@ -119,140 +117,167 @@ final readonly class AutoloadPatcher
         file_put_contents($psr4File, $content);
     }
 
+    // ── Regenerate autoload_static.php ────────────────────────────────────────
+
     /**
-     * Patch the optimized autoload_static.php file to include local modules.
+     * Regenerate autoload_static.php by reading the existing file's class name
+     * and other static maps, then rebuilding the PSR-4 sections from scratch.
      *
-     * @param string $staticFile Path to autoload_static.php
-     * @param array<string, list<string>> $additions Namespaces to add
+     * This avoids all string-search/replace on Composer's generated code.
+     * Only the PSR-4 sections are replaced; classmap, files, etc. are preserved
+     * verbatim from the original file.
+     *
+     * @param array<string, list<string>> $merged Complete merged PSR-4 map
      */
-    private function patchStaticFile(string $staticFile, array $additions): void
+    private function regenerateStaticFile(string $staticFile, array $merged): void
     {
-        $content = file_get_contents($staticFile);
-        if ($content === false) {
+        $original = file_get_contents($staticFile);
+        if ($original === false) {
             return;
         }
 
-        $baseDir = dirname($this->vendorDir);
-
-        foreach ($additions as $namespace => $paths) {
-            $firstChar = $namespace[0];
-            $namespaceLength = strlen($namespace);
-            $escapedNamespace = str_replace('\\', '\\\\', $namespace);
-
-            // Build path strings - use __DIR__ . '/../..' to go from vendor/composer to project root
-            $pathStrings = [];
-            foreach ($paths as $path) {
-                $pathStrings[] = str_replace($baseDir . '/', '__DIR__ . \'/../..\' . \'/', $path) . '\'';
-            }
-
-            // First pass: insert into prefixLengthsPsr4
-            $content = $this->insertIntoSection(
-                $content,
-                'public static $prefixLengthsPsr4',
-                $firstChar,
-                $escapedNamespace,
-                "'$escapedNamespace' => $namespaceLength,\n"
-            );
-
-            // Second pass: insert into prefixDirsPsr4
-            $pathsFormatted = '';
-            foreach ($pathStrings as $i => $p) {
-                $pathsFormatted .= "                $i => $p,\n";
-            }
-            $content = $this->insertIntoSection(
-                $content,
-                'public static $prefixDirsPsr4',
-                $firstChar,
-                $escapedNamespace,
-                "'$escapedNamespace' => array(\n$pathsFormatted            ),\n"
-            );
+        // Extract the class name Composer generated (e.g. ComposerStaticInit1234abc)
+        if (!preg_match('/class\s+(ComposerStaticInit\w+)/', $original, $m)) {
+            return;
         }
+
+        $baseDir   = dirname($this->vendorDir);
+
+        // Build prefixLengthsPsr4: grouped by first character
+        $prefixLengths = $this->buildPrefixLengths($merged);
+
+        // Build prefixDirsPsr4: namespace => [absolute paths]
+        $prefixDirs = $this->buildPrefixDirs($merged, $baseDir);
+
+        // Replace only the two PSR-4 sections in the original file
+        $content = $this->replacePsr4Section(
+            $original,
+            'prefixLengthsPsr4',
+            $this->renderPrefixLengths($prefixLengths),
+        );
+
+        $content = $this->replacePsr4Section(
+            $content,
+            'prefixDirsPsr4',
+            $this->renderPrefixDirs($prefixDirs),
+        );
 
         file_put_contents($staticFile, $content);
     }
 
     /**
-     * Insert a namespace entry into a specific section of the static file.
+     * Build the prefix-lengths map grouped by first character.
+     *
+     * @param  array<string, list<string>> $merged
+     * @return array<string, array<string, int>>
      */
-    private function insertIntoSection(
-        string $content,
-        string $sectionMarker,
-        string $firstChar,
-        string $escapedNamespace,
-        string $insertion
-    ): string {
-        // Find the section boundaries
-        $sectionStartPos = strpos($content, $sectionMarker);
-        if ($sectionStartPos === false) {
-            return $content;
+    private function buildPrefixLengths(array $merged): array
+    {
+        $result = [];
+
+        foreach (array_keys($merged) as $namespace) {
+            $char = $namespace[0];
+            $result[$char][$namespace] = strlen($namespace);
         }
 
-        // Find the next "public static" or end of class to determine section end
-        $nextSectionPos = strpos($content, 'public static $', $sectionStartPos + strlen($sectionMarker));
-        if ($nextSectionPos === false) {
-            // Last section - find the closing of the class property
-            $nextSectionPos = strpos($content, '};', $sectionStartPos);
+        ksort($result);
+
+        return $result;
+    }
+
+    /**
+     * Build the prefix-dirs map with paths relative to $baseDir.
+     *
+     * Paths that live inside $baseDir are expressed as
+     * __DIR__ . '/../../relative/path' so the file stays portable.
+     * Paths outside $baseDir are kept as absolute strings.
+     *
+     * @param  array<string, list<string>> $merged
+     * @return array<string, list<string>>  namespace => [path expressions]
+     */
+    private function buildPrefixDirs(array $merged, string $baseDir): array
+    {
+        $result = [];
+
+        foreach ($merged as $namespace => $paths) {
+            $expressions = [];
+
+            foreach ($paths as $path) {
+                // vendor/composer is two levels deep from $baseDir
+                if (str_starts_with($path, $baseDir . '/')) {
+                    $relative     = substr($path, strlen($baseDir) + 1);
+                    $expressions[] = "__DIR__ . '/../../" . $relative . "'";
+                } else {
+                    // Absolute path outside project root — keep as-is
+                    $expressions[] = var_export($path, true);
+                }
+            }
+
+            $result[$namespace] = $expressions;
         }
-        
-        $sectionContent = substr($content, $sectionStartPos, $nextSectionPos - $sectionStartPos);
-        
-        if (strpos($sectionContent, "'$escapedNamespace'") !== false) {
-            return $content; // Already exists in this section
-        }
 
-        $lines = explode("\n", $content);
-        $inSection = false;
-        $inserted = false;
-        $lastMatchingCharLine = -1;
+        return $result;
+    }
 
-        for ($i = 0; $i < count($lines); $i++) {
-            $line = $lines[$i];
+    /**
+     * Render the prefixLengthsPsr4 array body.
+     *
+     * @param array<string, array<string, int>> $prefixLengths
+     */
+    private function renderPrefixLengths(array $prefixLengths): string
+    {
+        $lines = [];
 
-            // Detect section start
-            if (strpos($line, $sectionMarker) !== false) {
-                $inSection = true;
-                continue;
+        foreach ($prefixLengths as $char => $entries) {
+            $lines[] = sprintf("        '%s' => array(", $char);
+            foreach ($entries as $namespace => $length) {
+                $escaped = str_replace('\\', '\\\\', $namespace);
+                $lines[] = sprintf("            '%s' => %d,", $escaped, $length);
             }
 
-            // End of section - look for next public static or end
-            if ($inSection && strpos($line, 'public static $') !== false) {
-                break;
-            }
-
-            // For prefixLengthsPsr4: find the first char section - 'M' => on one line
-            if ($sectionMarker === 'public static $prefixLengthsPsr4') {
-                if ($inSection && trim($line) === "'$firstChar' =>") {
-                    $lastMatchingCharLine = $i;
-                    continue;
-                }
-
-                // Insert after finding the char section, before the closing ),
-                if ($lastMatchingCharLine >= 0 && !$inserted && trim($line) === '),') {
-                    array_splice($lines, $i, 0, "            $insertion");
-                    $inserted = true;
-                    break;
-                }
-            }
-            // For prefixDirsPsr4: each namespace is a separate entry
-            else {
-                $trimmedLine = trim($line);
-                if ($inSection && strpos($trimmedLine, "'$firstChar") === 0 && strpos($trimmedLine, "' =>") !== false) {
-                    $lastMatchingCharLine = $i;
-                    continue;
-                }
-
-                // Insert AFTER the last namespace starting with $firstChar
-                // We need to insert after the closing ), of that namespace
-                if ($lastMatchingCharLine >= 0 && !$inserted && trim($line) === '),') {
-                    // Insert AFTER this line
-                    $insertionWithNewline = "\n            $insertion";
-                    array_splice($lines, $i + 1, 0, $insertionWithNewline);
-                    $inserted = true;
-                    break;
-                }
-            }
+            $lines[] = "        ),";
         }
 
         return implode("\n", $lines);
+    }
+
+    /**
+     * Render the prefixDirsPsr4 array body.
+     *
+     * @param array<string, list<string>> $prefixDirs  namespace => [path expressions]
+     */
+    private function renderPrefixDirs(array $prefixDirs): string
+    {
+        $lines = [];
+
+        foreach ($prefixDirs as $namespace => $expressions) {
+            $escaped = str_replace('\\', '\\\\', $namespace);
+            $lines[] = sprintf("        '%s' => array(", $escaped);
+            foreach ($expressions as $i => $expr) {
+                $lines[] = sprintf('            %d => %s,', $i, $expr);
+            }
+
+            $lines[] = "        ),";
+        }
+
+        return implode("\n", $lines);
+    }
+
+    /**
+     * Replace a single PSR-4 section in the static file content.
+     * and replaces the inner content with $replacement.
+     */
+    private function replacePsr4Section(
+        string $content,
+        string $propertyName,
+        string $replacement,
+    ): string {
+        $pattern = '/(public\s+static\s+\$' . preg_quote($propertyName, '/') . '\s*=\s*array\s*\()([^;]*?)(\);)/s';
+
+        return preg_replace(
+            $pattern,
+            '$1' . "\n" . $replacement . "\n    " . '$3',
+            $content,
+        ) ?? $content;
     }
 }
