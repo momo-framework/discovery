@@ -112,13 +112,13 @@ Each module declares its own `composer.json` with metadata and autoload config. 
 
 ## Local vs vendor modules
 
-| | Local module | Vendor module |
-|---|---|---|
-| Location | `core/modules/` | `core/vendor/` |
-| Autoload | injected by this plugin | standard Composer |
-| Dependencies | shared via `core/composer.json` | own `composer.json` |
-| Editable | yes — `make:*` commands work directly | no — `module:publish` first |
-| composer.json | metadata + autoload only | full package definition |
+|               | Local module                          | Vendor module               |
+|---------------|---------------------------------------|-----------------------------|
+| Location      | `core/modules/`                       | `core/vendor/`              |
+| Autoload      | injected by this plugin               | standard Composer           |
+| Dependencies  | shared via `core/composer.json`       | own `composer.json`         |
+| Editable      | yes — `make:*` commands work directly | no — `module:publish` first |
+| composer.json | metadata + autoload only              | full package definition     |
 
 ---
 
