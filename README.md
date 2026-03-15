@@ -3,7 +3,7 @@
 
   <h1>momo-framework/discovery</h1>
 
-  <p>Zero-config local module autodiscovery for <a href="https://github.com/momo-framework">Momo Framework</a></p>
+  <p>Zero-config local module autoloading for <a href="https://github.com/momo-framework">Momo Framework</a></p>
 
   <p>
     <img src="https://github.com/momo-framework/discovery/actions/workflows/ci.yml/badge.svg" alt="CI" />
@@ -17,55 +17,77 @@
 
 ---
 
-## What this does
+## Overview
 
-Drop a module folder into `modules/` — it works. No config, no `composer.json` edits, no `require` entries.
+`momo-framework/discovery` is a Composer plugin that automatically registers local module namespaces after every `composer dump-autoload`. Drop a module into `modules/` — its PSR-4 namespace is available immediately, with no edits to `composer.json`.
 
 ```
 core/
   modules/
-    Shop/          ← just created this folder
+    Shop/              ← drop a module here
       composer.json
       src/
-  vendor/          ← Shop namespace automatically injected here
+  vendor/              ← namespace injected automatically
 ```
 
-After `composer dump-autoload`:
+```bash
+$ composer dump-autoload
 
-```
 momo-discovery: injected 1 local module namespace(s): Momo\Module\Shop\
+```
+
+---
+
+## Requirements
+
+- PHP `>= 8.5`
+- Composer 2
+
+---
+
+## Installation
+
+Already included in Momo Framework core. For standalone use:
+
+```bash
+composer require momo-framework/discovery
 ```
 
 ---
 
 ## How it works
 
+The plugin hooks into Composer's `POST_AUTOLOAD_DUMP` event. After each dump it scans `modules/`, collects PSR-4 declarations from each module's `composer.json`, and injects them into the autoloader.
+
+Two files are patched:
+
+**`vendor/composer/autoload_psr4.php`** — rewritten from scratch with the merged namespace map. Absolute paths are replaced with `$baseDir` expressions to keep the file portable across machines.
+
+**`vendor/autoload_real.php`** — `$loader->addPsr4()` calls are injected just before `return $loader;`. This ensures module namespaces are registered regardless of whether `--optimize` or `--classmap-authoritative` flags are active. `autoload_static.php` is intentionally not touched — its format is not a stable Composer contract.
+
+Both patches are idempotent — a guard comment prevents duplicate entries across repeated `dump-autoload` runs.
+
 ```
 composer dump-autoload
-       │
-       ▼
-POST_AUTOLOAD_DUMP event
-       │
-       ▼
-MomoPlugin::onPostAutoloadDump()
-       │
-       ├── ModuleScanner::scan()
-       │     Reads modules/*/composer.json
-       │     Collects autoload.psr-4 entries
-       │
-       └── AutoloadPatcher::patch()
-             Merges into vendor/composer/autoload_psr4.php
-             Uses var_export — guaranteed valid PHP
-             Replaces absolute paths with $baseDir expressions
+        │
+        ▼
+POST_AUTOLOAD_DUMP
+        │
+        ├─ ModuleScanner::scan()
+        │    reads modules/*/composer.json
+        │    collects autoload.psr-4 entries
+        │    resolves relative paths to absolute
+        │
+        └─ AutoloadPatcher::patch()
+             rewrites vendor/composer/autoload_psr4.php
+             injects addPsr4() calls into vendor/autoload_real.php
 ```
-
-`autoload_static.php` is intentionally **not touched** — regex-patching a generated PHP class is fragile. The file-based PSR-4 loader is always active unless `--optimize` or `--classmap-authoritative` flags are used.
 
 ---
 
 ## Local module format
 
-A local module's `composer.json` contains **only metadata** — no `require`, no `repositories`:
+Each module declares its own `composer.json` with metadata and autoload config. No `require` section — all modules share the root `vendor/`.
 
 ```json
 {
@@ -79,47 +101,24 @@ A local module's `composer.json` contains **only metadata** — no `require`, no
   "extra": {
     "momo": {
       "providers": [
-        "Momo\\Module\\Shop\\Application\\Providers\\ShopServiceProvider"
+        "Momo\\Module\\Shop\\ShopServiceProvider"
       ]
     }
   }
 }
 ```
 
-Dependencies are declared in `core/composer.json` — all local modules share one `vendor/`.
-
 ---
 
-## Local vs Vendor modules
+## Local vs vendor modules
 
-| | Local | Vendor |
+| | Local module | Vendor module |
 |---|---|---|
 | Location | `core/modules/` | `core/vendor/` |
 | Autoload | injected by this plugin | standard Composer |
-| Dependencies | shared from `core/composer.json` | own `composer.json` |
-| Editable | yes — `make:*` commands work | no — `module:publish` first |
-| composer.json | metadata only | full package |
-
----
-
-## Installation
-
-Already included in Momo Framework core. For manual setup:
-
-```bash
-composer require momo-framework/discovery
-```
-
-Add to `core/composer.json`:
-
-```json
-{
-  "config": {
-    "optimize-autoloader": false,
-    "classmap-authoritative": false
-  }
-}
-```
+| Dependencies | shared via `core/composer.json` | own `composer.json` |
+| Editable | yes — `make:*` commands work directly | no — `module:publish` first |
+| composer.json | metadata + autoload only | full package definition |
 
 ---
 
@@ -132,7 +131,7 @@ composer install
 # run tests
 composer test
 
-# run tests with coverage report (requires PCOV or Xdebug)
+# run tests with coverage report (requires PCOV)
 composer test:coverage
 
 # static analysis — PHPStan level 10
@@ -150,8 +149,6 @@ composer rector:check
 # run full CI pipeline locally
 composer ci
 ```
-
----
 
 ### CI pipeline
 
