@@ -1,9 +1,19 @@
 <?php
 
 /**
- * This file is part of Momo Framework.
+ * Part of Momo Framework.
  *
- * @copyright Vahe Sargsyan
+ * © Momo Framework
+ *
+ * For the full copyright and license information, please view the LICENSE
+ * file that was distributed with this source code.
+ *
+ * Unauthorized copying, modification, or distribution of this file,
+ * via any medium, is strictly prohibited without prior written permission
+ * from the copyright holder.
+ *
+ * @author    Vahe Sargsyan <w33bvGL>
+ * @copyright Momo Framework
  * @license   AGPL-3.0-or-later <https://www.gnu.org/licenses/agpl-3.0.html>
  * @link      https://github.com/momo-framework
  */
@@ -29,7 +39,7 @@ final readonly class ModuleScanner
     {
         $modulesDir = $this->rootDir . '/' . self::MODULES_DIR;
 
-        if (!is_dir($modulesDir)) {
+        if (! is_dir($modulesDir)) {
             return [];
         }
 
@@ -41,7 +51,7 @@ final readonly class ModuleScanner
                 continue;
             }
 
-            if (!$entry->isDir()) {
+            if (! $entry->isDir()) {
                 continue;
             }
 
@@ -60,7 +70,7 @@ final readonly class ModuleScanner
     {
         $composerJson = $modulePath . '/composer.json';
 
-        if (!file_exists($composerJson)) {
+        if (! file_exists($composerJson)) {
             return [];
         }
 
@@ -72,19 +82,19 @@ final readonly class ModuleScanner
 
         $data = json_decode($raw, true);
 
-        if (!is_array($data)) {
+        if (! is_array($data)) {
             return [];
         }
 
         $autoload = $data['autoload'] ?? null;
 
-        if (!is_array($autoload)) {
+        if (! is_array($autoload)) {
             return [];
         }
 
         $psr4 = $autoload['psr-4'] ?? null;
 
-        if (!is_array($psr4)) {
+        if (! is_array($psr4)) {
             return [];
         }
 
@@ -92,7 +102,7 @@ final readonly class ModuleScanner
         $additions = [];
 
         foreach ($psr4 as $namespace => $relativePath) {
-            if (!is_string($namespace)) {
+            if (! is_string($namespace)) {
                 continue;
             }
 
@@ -103,7 +113,7 @@ final readonly class ModuleScanner
 
             foreach ($paths as $p) {
                 if (is_string($p)) {
-                    $resolved[] = $modulePath . '/' . rtrim($p, '/');
+                    $resolved[] = $modulePath . '/' . mb_rtrim($p, '/');
                 }
             }
 

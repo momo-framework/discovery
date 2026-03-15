@@ -2,7 +2,9 @@
   "name": "momo-framework/discovery",
   "description": "Zero-config local module autodiscovery for Momo Framework",
   "type": "composer-plugin",
-  "license": "proprietary",
+  "license": "AGPL-3.0-or-later",
+  "minimum-stability": "dev",
+  "prefer-stable": true,
   "require": {
     "php": ">=8.5",
     "composer-plugin-api": "^2.0"
@@ -28,12 +30,6 @@
   },
   "extra": {
     "class": "Momo\\Discovery\\MomoPlugin"
-  },
-  "config": {
-    "allow-plugins": {
-      "infection/extension-installer": true
-    },
-    "sort-packages": true
   },
   "scripts": {
     "lint": "php-cs-fixer fix --dry-run --diff",

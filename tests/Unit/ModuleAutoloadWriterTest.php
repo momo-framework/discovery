@@ -1,9 +1,19 @@
 <?php
 
 /**
- * This file is part of Momo Framework.
+ * Part of Momo Framework.
  *
- * @copyright Vahe Sargsyan
+ * © Momo Framework
+ *
+ * For the full copyright and license information, please view the LICENSE
+ * file that was distributed with this source code.
+ *
+ * Unauthorized copying, modification, or distribution of this file,
+ * via any medium, is strictly prohibited without prior written permission
+ * from the copyright holder.
+ *
+ * @author    Vahe Sargsyan <w33bvGL>
+ * @copyright Momo Framework
  * @license   AGPL-3.0-or-later <https://www.gnu.org/licenses/agpl-3.0.html>
  * @link      https://github.com/momo-framework
  */
@@ -17,7 +27,11 @@ use Momo\Discovery\Tests\Support\InteractsWithFilesystem;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
+use RuntimeException;
 
+/**
+ * @internal
+ */
 #[CoversClass(ModuleAutoloadWriter::class)]
 final class ModuleAutoloadWriterTest extends TestCase
 {
@@ -29,9 +43,9 @@ final class ModuleAutoloadWriterTest extends TestCase
 
     protected function setUp(): void
     {
-        $this->tmpDir    = sys_get_temp_dir() . '/momo-writer-test-' . uniqid();
+        $this->tmpDir = sys_get_temp_dir() . '/momo-writer-test-' . uniqid();
         $this->cacheFile = $this->tmpDir . '/bootstrap/cache/modules-autoload.php';
-        mkdir($this->tmpDir, 0755, true);
+        mkdir($this->tmpDir, 0o755, true);
     }
 
     protected function tearDown(): void
@@ -48,7 +62,7 @@ final class ModuleAutoloadWriterTest extends TestCase
     {
         $writer = new ModuleAutoloadWriter($this->tmpDir);
         $writer->write($this->cacheFile, [
-            'Momo\\Module\\Shop\\' => [$this->tmpDir . '/modules/Shop/src'],
+            'Momo\Module\Shop\\' => [$this->tmpDir . '/modules/Shop/src'],
         ]);
 
         self::assertFileExists($this->cacheFile);
@@ -59,7 +73,7 @@ final class ModuleAutoloadWriterTest extends TestCase
     {
         $writer = new ModuleAutoloadWriter($this->tmpDir);
         $writer->write($this->cacheFile, [
-            'Momo\\Module\\Shop\\' => [$this->tmpDir . '/modules/Shop/src'],
+            'Momo\Module\Shop\\' => [$this->tmpDir . '/modules/Shop/src'],
         ]);
 
         $output = shell_exec('php -l ' . escapeshellarg($this->cacheFile) . ' 2>&1');
@@ -75,12 +89,12 @@ final class ModuleAutoloadWriterTest extends TestCase
     {
         $writer = new ModuleAutoloadWriter($this->tmpDir);
         $writer->write($this->cacheFile, [
-            'Momo\\Module\\Shop\\' => [$this->tmpDir . '/modules/Shop/src'],
+            'Momo\Module\Shop\\' => [$this->tmpDir . '/modules/Shop/src'],
         ]);
 
         $content = (string) file_get_contents($this->cacheFile);
         self::assertStringContainsString('$loader->addPsr4(', $content);
-        self::assertStringContainsString(var_export('Momo\\Module\\Shop\\', true), $content);
+        self::assertStringContainsString(var_export('Momo\Module\Shop\\', true), $content);
     }
 
     #[Test]
@@ -88,13 +102,13 @@ final class ModuleAutoloadWriterTest extends TestCase
     {
         $writer = new ModuleAutoloadWriter($this->tmpDir);
         $writer->write($this->cacheFile, [
-            'Momo\\Module\\Shop\\'    => [$this->tmpDir . '/modules/Shop/src'],
-            'Momo\\Module\\Billing\\' => [$this->tmpDir . '/modules/Billing/src'],
+            'Momo\Module\Shop\\' => [$this->tmpDir . '/modules/Shop/src'],
+            'Momo\Module\Billing\\' => [$this->tmpDir . '/modules/Billing/src'],
         ]);
 
         $content = (string) file_get_contents($this->cacheFile);
-        self::assertStringContainsString(var_export('Momo\\Module\\Shop\\', true), $content);
-        self::assertStringContainsString(var_export('Momo\\Module\\Billing\\', true), $content);
+        self::assertStringContainsString(var_export('Momo\Module\Shop\\', true), $content);
+        self::assertStringContainsString(var_export('Momo\Module\Billing\\', true), $content);
     }
 
     // -------------------------------------------------------------------------
@@ -106,7 +120,7 @@ final class ModuleAutoloadWriterTest extends TestCase
     {
         $writer = new ModuleAutoloadWriter($this->tmpDir);
         $writer->write($this->cacheFile, [
-            'Momo\\Module\\Shop\\' => [$this->tmpDir . '/modules/Shop/src'],
+            'Momo\Module\Shop\\' => [$this->tmpDir . '/modules/Shop/src'],
         ]);
 
         $content = (string) file_get_contents($this->cacheFile);
@@ -123,7 +137,7 @@ final class ModuleAutoloadWriterTest extends TestCase
 
         $writer = new ModuleAutoloadWriter($this->tmpDir);
         $writer->write($this->cacheFile, [
-            'Outside\\Ns\\' => [$outsidePath],
+            'Outside\Ns\\' => [$outsidePath],
         ]);
 
         $content = (string) file_get_contents($this->cacheFile);
@@ -135,7 +149,7 @@ final class ModuleAutoloadWriterTest extends TestCase
     {
         $writer = new ModuleAutoloadWriter($this->tmpDir);
         $writer->write($this->cacheFile, [
-            'Momo\\Module\\Shop\\' => [
+            'Momo\Module\Shop\\' => [
                 $this->tmpDir . '/modules/Shop/src',
                 $this->tmpDir . '/modules/Shop/lib',
             ],
@@ -153,7 +167,7 @@ final class ModuleAutoloadWriterTest extends TestCase
     #[Test]
     public function overwriting_produces_identical_output(): void
     {
-        $additions = ['Momo\\Module\\Shop\\' => [$this->tmpDir . '/modules/Shop/src']];
+        $additions = ['Momo\Module\Shop\\' => [$this->tmpDir . '/modules/Shop/src']];
 
         $writer = new ModuleAutoloadWriter($this->tmpDir);
         $writer->write($this->cacheFile, $additions);
@@ -178,17 +192,17 @@ final class ModuleAutoloadWriterTest extends TestCase
         }
 
         // Make tmpDir read-only so mkdir inside it fails
-        chmod($this->tmpDir, 0444);
+        chmod($this->tmpDir, 0o444);
 
-        $this->expectException(\RuntimeException::class);
+        $this->expectException(RuntimeException::class);
         $this->expectExceptionMessageMatches('/could not be created/');
 
         $writer = new ModuleAutoloadWriter($this->tmpDir);
         $writer->write($this->cacheFile, [
-            'Momo\\Module\\Shop\\' => [$this->tmpDir . '/modules/Shop/src'],
+            'Momo\Module\Shop\\' => [$this->tmpDir . '/modules/Shop/src'],
         ]);
 
-        chmod($this->tmpDir, 0755);
+        chmod($this->tmpDir, 0o755);
     }
 
     #[Test]
@@ -200,17 +214,17 @@ final class ModuleAutoloadWriterTest extends TestCase
 
         // Create the cache dir but make it read-only
         $cacheDir = dirname($this->cacheFile);
-        mkdir($cacheDir, 0755, true);
-        chmod($cacheDir, 0444);
+        mkdir($cacheDir, 0o755, true);
+        chmod($cacheDir, 0o444);
 
-        $this->expectException(\RuntimeException::class);
+        $this->expectException(RuntimeException::class);
         $this->expectExceptionMessageMatches('/Failed to write/');
 
         $writer = new ModuleAutoloadWriter($this->tmpDir);
         $writer->write($this->cacheFile, [
-            'Momo\\Module\\Shop\\' => [$this->tmpDir . '/modules/Shop/src'],
+            'Momo\Module\Shop\\' => [$this->tmpDir . '/modules/Shop/src'],
         ]);
 
-        chmod($cacheDir, 0755);
+        chmod($cacheDir, 0o755);
     }
 }
