@@ -12,7 +12,9 @@
     "phpunit/phpunit": "^13.0",
     "phpstan/phpstan": "^2.1",
     "friendsofphp/php-cs-fixer": "dev-master",
-    "rector/rector": "dev-main"
+    "rector/rector": "dev-main",
+    "phpstan/phpstan-strict-rules": "2.0.x-dev",
+    "phpstan/phpstan-phpunit": "2.0.x-dev"
   },
   "autoload": {
     "psr-4": {
