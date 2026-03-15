@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Momo\Discovery\Tests\Unit;
 
 use Momo\Discovery\AutoloadPatcher;
+use Momo\Discovery\Tests\Support\CreatesComposerStubs;
+use Momo\Discovery\Tests\Support\InteractsWithFilesystem;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
@@ -12,6 +14,9 @@ use PHPUnit\Framework\TestCase;
 #[CoversClass(AutoloadPatcher::class)]
 final class AutoloadPatcherTest extends TestCase
 {
+    use CreatesComposerStubs;
+    use InteractsWithFilesystem;
+
     private string $tmpDir;
 
     private string $vendorDir;
@@ -37,10 +42,6 @@ final class AutoloadPatcherTest extends TestCase
     {
         $this->removeDirectory($this->tmpDir);
     }
-
-    // -------------------------------------------------------------------------
-    // autoload_psr4.php — file creation
-    // -------------------------------------------------------------------------
 
     #[Test]
     public function creates_psr4_file_when_it_does_not_exist(): void
@@ -71,14 +72,10 @@ final class AutoloadPatcherTest extends TestCase
         self::assertIsArray($result);
     }
 
-    // -------------------------------------------------------------------------
-    // autoload_psr4.php — namespace injection
-    // -------------------------------------------------------------------------
-
     #[Test]
     public function injects_namespace_into_empty_file(): void
     {
-        $this->writeExistingPsr4([]);
+        $this->writeExistingPsr4($this->psr4File, []);
 
         $patcher = new AutoloadPatcher($this->vendorDir);
         $patcher->patch(['Momo\\Module\\Shop\\' => [$this->tmpDir . '/modules/Shop/src']]);
@@ -90,7 +87,7 @@ final class AutoloadPatcherTest extends TestCase
     #[Test]
     public function merges_with_existing_namespaces(): void
     {
-        $this->writeExistingPsr4([
+        $this->writeExistingPsr4($this->psr4File, [
             'Symfony\\Component\\Console\\' => [$this->vendorDir . '/symfony/console/src'],
         ]);
 
@@ -98,7 +95,6 @@ final class AutoloadPatcherTest extends TestCase
         $patcher->patch(['Momo\\Module\\Shop\\' => [$this->tmpDir . '/modules/Shop/src']]);
 
         $result = require $this->psr4File;
-
         self::assertArrayHasKey('Symfony\\Component\\Console\\', $result);
         self::assertArrayHasKey('Momo\\Module\\Shop\\', $result);
     }
@@ -109,7 +105,7 @@ final class AutoloadPatcherTest extends TestCase
         $oldPath = $this->vendorDir . '/old/path';
         $newPath = $this->tmpDir . '/modules/Shop/src';
 
-        $this->writeExistingPsr4(['Momo\\Module\\Shop\\' => [$oldPath]]);
+        $this->writeExistingPsr4($this->psr4File, ['Momo\\Module\\Shop\\' => [$oldPath]]);
 
         $patcher = new AutoloadPatcher($this->vendorDir);
         $patcher->patch(['Momo\\Module\\Shop\\' => [$newPath]]);
@@ -121,7 +117,7 @@ final class AutoloadPatcherTest extends TestCase
     #[Test]
     public function injects_multiple_namespaces(): void
     {
-        $this->writeExistingPsr4([]);
+        $this->writeExistingPsr4($this->psr4File, []);
 
         $patcher = new AutoloadPatcher($this->vendorDir);
         $patcher->patch([
@@ -135,10 +131,6 @@ final class AutoloadPatcherTest extends TestCase
         self::assertArrayHasKey('Momo\\Module\\Billing\\', $result);
         self::assertCount(2, $result);
     }
-
-    // -------------------------------------------------------------------------
-    // autoload_psr4.php — path portability
-    // -------------------------------------------------------------------------
 
     #[Test]
     public function generated_psr4_file_contains_base_dir_variable(): void
@@ -160,16 +152,11 @@ final class AutoloadPatcherTest extends TestCase
         self::assertStringNotContainsString("'" . $this->tmpDir . "'", (string) $content);
     }
 
-    // -------------------------------------------------------------------------
-    // autoload_psr4.php — edge cases
-    // -------------------------------------------------------------------------
-
     #[Test]
     public function patch_with_empty_additions_writes_existing_unchanged(): void
     {
         $existing = ['Symfony\\Component\\Console\\' => [$this->vendorDir . '/symfony/console/src']];
-        $this->writeExistingPsr4($existing);
-
+        $this->writeExistingPsr4($this->psr4File, $existing);
         $patcher = new AutoloadPatcher($this->vendorDir);
         $patcher->patch([]);
 
@@ -232,14 +219,9 @@ final class AutoloadPatcherTest extends TestCase
         self::assertArrayHasKey('Momo\\Module\\Shop\\', $result);
     }
 
-    // -------------------------------------------------------------------------
-    // autoload_real.php — hook injection
-    // -------------------------------------------------------------------------
-
     #[Test]
     public function does_not_touch_real_file_when_it_does_not_exist(): void
     {
-        // No autoload_real.php created — patch() must not throw
         $patcher = new AutoloadPatcher($this->vendorDir);
         $patcher->patch(['Momo\\Module\\Shop\\' => [$this->tmpDir . '/modules/Shop/src']]);
 
@@ -249,14 +231,13 @@ final class AutoloadPatcherTest extends TestCase
     #[Test]
     public function injects_add_psr4_calls_into_real_file(): void
     {
-        $this->writeRealFile();
+        $this->writeRealFile($this->realFile);
 
         $patcher = new AutoloadPatcher($this->vendorDir);
         $patcher->patch(['Momo\\Module\\Shop\\' => [$this->tmpDir . '/modules/Shop/src']]);
 
         $content = file_get_contents($this->realFile);
 
-        // var_export() doubles backslashes: 'Momo\\Module\\Shop\\' in source → 'Momo\\\\Module\\\\Shop\\\\' in file
         self::assertStringContainsString('$loader->addPsr4(', (string) $content);
         self::assertStringContainsString(var_export('Momo\\Module\\Shop\\', true), (string) $content);
     }
@@ -264,7 +245,7 @@ final class AutoloadPatcherTest extends TestCase
     #[Test]
     public function injected_real_file_is_valid_php(): void
     {
-        $this->writeRealFile();
+        $this->writeRealFile($this->realFile);
 
         $patcher = new AutoloadPatcher($this->vendorDir);
         $patcher->patch(['Momo\\Module\\Shop\\' => [$this->tmpDir . '/modules/Shop/src']]);
@@ -276,7 +257,7 @@ final class AutoloadPatcherTest extends TestCase
     #[Test]
     public function injects_hook_before_return_loader_statement(): void
     {
-        $this->writeRealFile();
+        $this->writeRealFile($this->realFile);
 
         $patcher = new AutoloadPatcher($this->vendorDir);
         $patcher->patch(['Momo\\Module\\Shop\\' => [$this->tmpDir . '/modules/Shop/src']]);
@@ -294,14 +275,13 @@ final class AutoloadPatcherTest extends TestCase
     #[Test]
     public function hook_uses_relative_dir_expression_for_project_paths(): void
     {
-        $this->writeRealFile();
+        $this->writeRealFile($this->realFile);
 
         $patcher = new AutoloadPatcher($this->vendorDir);
         $patcher->patch(['Momo\\Module\\Shop\\' => [$this->tmpDir . '/modules/Shop/src']]);
 
         $content = file_get_contents($this->realFile);
 
-        // Should use __DIR__ . '/../...' not the absolute tmpDir path
         self::assertStringContainsString("__DIR__ . '/../", (string) $content);
         self::assertStringNotContainsString($this->tmpDir . '/modules', (string) $content);
     }
@@ -309,7 +289,7 @@ final class AutoloadPatcherTest extends TestCase
     #[Test]
     public function hook_uses_absolute_path_when_outside_project_root(): void
     {
-        $this->writeRealFile();
+        $this->writeRealFile($this->realFile);
         $outsidePath = '/tmp/outside-project/src';
 
         $patcher = new AutoloadPatcher($this->vendorDir);
@@ -322,7 +302,7 @@ final class AutoloadPatcherTest extends TestCase
     #[Test]
     public function re_patching_does_not_duplicate_hook_entries(): void
     {
-        $this->writeRealFile();
+        $this->writeRealFile($this->realFile);
 
         $patcher = new AutoloadPatcher($this->vendorDir);
         $patcher->patch(['Momo\\Module\\Shop\\' => [$this->tmpDir . '/modules/Shop/src']]);
@@ -330,7 +310,6 @@ final class AutoloadPatcherTest extends TestCase
 
         $content = (string) file_get_contents($this->realFile);
 
-        // var_export() doubles backslashes — count the escaped form as it appears in the file
         $count = substr_count($content, var_export('Momo\\Module\\Shop\\', true));
         self::assertSame(1, $count);
     }
@@ -338,7 +317,7 @@ final class AutoloadPatcherTest extends TestCase
     #[Test]
     public function re_patching_with_updated_namespace_replaces_old_hook(): void
     {
-        $this->writeRealFile();
+        $this->writeRealFile($this->realFile);
 
         $patcher = new AutoloadPatcher($this->vendorDir);
         $patcher->patch(['Momo\\Module\\Shop\\' => [$this->tmpDir . '/modules/Shop/src']]);
@@ -346,7 +325,6 @@ final class AutoloadPatcherTest extends TestCase
 
         $content = (string) file_get_contents($this->realFile);
 
-        // Second patch replaces first — only Billing should be present
         self::assertStringNotContainsString(var_export('Momo\\Module\\Shop\\', true), $content);
         self::assertStringContainsString(var_export('Momo\\Module\\Billing\\', true), $content);
     }
@@ -354,7 +332,7 @@ final class AutoloadPatcherTest extends TestCase
     #[Test]
     public function injects_multiple_namespaces_into_real_file(): void
     {
-        $this->writeRealFile();
+        $this->writeRealFile($this->realFile);
 
         $patcher = new AutoloadPatcher($this->vendorDir);
         $patcher->patch([
@@ -370,45 +348,37 @@ final class AutoloadPatcherTest extends TestCase
     #[Test]
     public function skips_real_file_hook_when_return_loader_not_found(): void
     {
-        // Write a real file without the expected `return $loader;`
         file_put_contents($this->realFile, "<?php\n// no return statement\n");
         $original = file_get_contents($this->realFile);
 
         $patcher = new AutoloadPatcher($this->vendorDir);
         $patcher->patch(['Momo\\Module\\Shop\\' => [$this->tmpDir . '/modules/Shop/src']]);
 
-        // File should remain unchanged
         self::assertSame($original, file_get_contents($this->realFile));
     }
 
     #[Test]
     public function skips_hook_when_real_file_is_not_readable(): void
     {
-        // Skip on Windows — chmod has no effect there.
         if (PHP_OS_FAMILY === 'Windows') {
             self::markTestSkipped('chmod is not reliable on Windows.');
         }
 
-        $this->writeRealFile();
+        $this->writeRealFile($this->realFile);
         chmod($this->realFile, 0000);
 
         $patcher = new AutoloadPatcher($this->vendorDir);
 
-        // Must not throw — silently skips the hook injection.
         $patcher->patch(['Momo\\Module\\Shop\\' => [$this->tmpDir . '/modules/Shop/src']]);
 
         chmod($this->realFile, 0644);
 
-        // autoload_psr4.php was still written — only the real-file hook was skipped.
         self::assertFileExists($this->psr4File);
     }
 
     #[Test]
     public function strip_previous_hook_returns_content_unchanged_when_return_loader_absent_after_marker(): void
     {
-        // A file where the marker is present but `return $loader;` does not follow it.
-        // stripPreviousHook() returns the content unchanged; hookRealFile() then bails
-        // because `return $loader;` is absent from the full content too.
         $broken = "<?php\n        " . '// momo-discovery:patched' . "\n        \$loader->addPsr4('X\\\\', []);\n";
         file_put_contents($this->realFile, $broken);
 
@@ -418,69 +388,5 @@ final class AutoloadPatcherTest extends TestCase
         $patcher->patch(['Momo\\Module\\Shop\\' => [$this->tmpDir . '/modules/Shop/src']]);
 
         self::assertSame($original, file_get_contents($this->realFile));
-    }
-
-    // -------------------------------------------------------------------------
-    // Helpers
-    // -------------------------------------------------------------------------
-
-    /**
-     * @param array<string, list<string>> $map
-     */
-    private function writeExistingPsr4(array $map): void
-    {
-        $export = var_export($map, true);
-        file_put_contents(
-            $this->psr4File,
-            "<?php\n\n\$vendorDir = dirname(__DIR__);\n\$baseDir = dirname(\$vendorDir);\n\nreturn {$export};\n",
-        );
-    }
-
-    /**
-     * Write a minimal autoload_real.php that mimics Composer's generated file.
-     */
-    private function writeRealFile(): void
-    {
-        file_put_contents(
-            $this->realFile,
-            <<<'PHP'
-            <?php
-
-            class ComposerAutoloaderInitAbc123
-            {
-                private static $loader;
-
-                public static function getLoader()
-                {
-                    if (null !== self::$loader) {
-                        return self::$loader;
-                    }
-
-                    $loader = new \Composer\Autoload\ClassLoader();
-                    $loader->register(true);
-
-                    return $loader;
-                }
-            }
-            PHP,
-        );
-    }
-
-    private function removeDirectory(string $dir): void
-    {
-        if (!is_dir($dir)) {
-            return;
-        }
-
-        $files = new \RecursiveIteratorIterator(
-            new \RecursiveDirectoryIterator($dir, \FilesystemIterator::SKIP_DOTS),
-            \RecursiveIteratorIterator::CHILD_FIRST,
-        );
-
-        foreach ($files as $file) {
-            $file->isDir() ? rmdir($file->getPathname()) : unlink($file->getPathname());
-        }
-
-        rmdir($dir);
     }
 }
