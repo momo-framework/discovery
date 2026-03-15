@@ -8,5 +8,4 @@
 /.gitignore                 export-ignore
 
 /src/                       export-all
-/README.md                  export-all
 /composer.json              export-all
