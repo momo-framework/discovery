@@ -3,7 +3,10 @@
 
   <h1>momo-framework/discovery</h1>
 
-  <p>Zero-config local module autoloading for <a href="https://github.com/momo-framework">Momo Framework</a></p>
+  <p>
+    <strong>Zero-config local module autoloading for <a href="https://github.com/momo-framework">Momo Framework</a>.</strong><br />
+    Automatically discovers local modules and patches Composer's internal maps to enable seamless PSR-4 integration without manual configuration.
+  </p>
 
   <p>
     <img src="https://github.com/momo-framework/discovery/actions/workflows/ci.yml/badge.svg" alt="CI" />
