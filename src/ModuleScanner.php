@@ -15,7 +15,7 @@ final readonly class ModuleScanner
     ) {}
 
     /**
-     * @return array<string, list<string>>  namespace → [absolute paths]
+     * @return array<string, list<string>>
      */
     public function scan(): array
     {

@@ -5,17 +5,21 @@ declare(strict_types=1);
 namespace Momo\Discovery;
 
 use RuntimeException;
+
 final readonly class ModuleAutoloadWriter
 {
     public function __construct(
         private string $rootDir,
     ) {}
 
+    /**
+     * @param array<string, list<string>> $additions
+     */
     public function write(string $cacheFile, array $additions): void
     {
         $cacheDir = dirname($cacheFile);
 
-        if (!is_dir($cacheDir) && !mkdir($cacheDir, 0755, true) && !is_dir($cacheDir)) {
+        if (!is_dir($cacheDir) && !@mkdir($cacheDir, 0755, true) && !is_dir($cacheDir)) {
             throw new RuntimeException(sprintf('Directory "%s" could not be created.', $cacheDir));
         }
 
@@ -32,8 +36,8 @@ final readonly class ModuleAutoloadWriter
             $pathExprs = [];
 
             foreach ($paths as $path) {
-                if (str_starts_with($path, $this->rootDir . '/')) {
-                    $relative    = substr($path, strlen($this->rootDir) + 1);
+                if (str_starts_with((string) $path, $this->rootDir . '/')) {
+                    $relative    = substr((string) $path, strlen($this->rootDir) + 1);
                     $pathExprs[] = "__DIR__ . '/../../" . $relative . "'";
                 } else {
                     $pathExprs[] = var_export($path, true);
@@ -49,7 +53,7 @@ final readonly class ModuleAutoloadWriter
 
         $lines[] = '';
 
-        $result = file_put_contents($cacheFile, implode("\n", $lines));
+        $result = @file_put_contents($cacheFile, implode("\n", $lines));
 
         if ($result === false) {
             throw new RuntimeException(sprintf('Failed to write module autoload cache to "%s".', $cacheFile));
