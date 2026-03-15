@@ -8,7 +8,6 @@
  * @link      https://github.com/momo-framework
  */
 
-
 declare(strict_types=1);
 
 namespace Momo\Discovery;
