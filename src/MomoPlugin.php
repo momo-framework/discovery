@@ -12,6 +12,14 @@ use Composer\Script\Event;
 use Composer\Script\ScriptEvents;
 
 /**
+ * Composer plugin that generates a module autoload cache file after every
+ * `composer dump-autoload`.
+ *
+ * Instead of patching Composer's generated files (which is fragile), this
+ * plugin writes `bootstrap/cache/modules-autoload.php` — a plain PHP file
+ * that the application reads at startup to register local module namespaces
+ * on the already-loaded ClassLoader instance.
+ *
  * @codeCoverageIgnore
  */
 final class MomoPlugin implements PluginInterface, EventSubscriberInterface
@@ -31,8 +39,8 @@ final class MomoPlugin implements PluginInterface, EventSubscriberInterface
 
     public function onPostAutoloadDump(Event $event): void
     {
-        $composer  = $event->getComposer();
-        $io        = $event->getIO();
+        $composer     = $event->getComposer();
+        $io           = $event->getIO();
         $rawVendorDir = $composer->getConfig()->get('vendor-dir');
 
         if (!is_string($rawVendorDir)) {
@@ -46,13 +54,19 @@ final class MomoPlugin implements PluginInterface, EventSubscriberInterface
         $scanner   = new ModuleScanner($rootDir);
         $additions = $scanner->scan();
 
+        $cacheFile = $rootDir . '/bootstrap/cache/modules-autoload.php';
+
         if ($additions === []) {
+            // Remove stale cache so the application does not load old namespaces
+            if (file_exists($cacheFile)) {
+                unlink($cacheFile);
+            }
             $io->write('<info>momo-discovery:</info> no local modules found.');
             return;
         }
 
-        $patcher = new AutoloadPatcher($vendorDir);
-        $patcher->patch($additions);
+        $writer = new ModuleAutoloadWriter($rootDir);
+        $writer->write($cacheFile, $additions);
 
         $io->write(
             sprintf(
