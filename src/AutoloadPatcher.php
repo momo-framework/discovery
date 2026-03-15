@@ -61,8 +61,6 @@ final readonly class AutoloadPatcher
         }
     }
 
-    // ── autoload_psr4.php ─────────────────────────────────────────────────────
-
     /**
      * Read and validate the current PSR-4 map from autoload_psr4.php.
      *
@@ -138,8 +136,6 @@ final readonly class AutoloadPatcher
         file_put_contents($psr4File, $content);
     }
 
-    // ── autoload_real.php ─────────────────────────────────────────────────────
-
     /**
      * Inject `$loader->addPsr4()` calls into `ComposerAutoloaderInit*::getLoader()`.
      *
@@ -160,7 +156,7 @@ final readonly class AutoloadPatcher
      */
     private function hookRealFile(string $realFile, array $additions): void
     {
-        $content = file_get_contents($realFile);
+        $content = @file_get_contents($realFile);
 
         if ($content === false) {
             return;
