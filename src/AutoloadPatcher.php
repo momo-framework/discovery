@@ -12,6 +12,9 @@ final readonly class AutoloadPatcher
         private string $vendorDir,
     ) {}
 
+    /**
+     * @param array<string, list<string>> $additions  namespace → absolute paths
+     */
     public function patch(array $additions): void
     {
         $psr4File = $this->vendorDir . '/composer/autoload_psr4.php';
@@ -25,6 +28,9 @@ final readonly class AutoloadPatcher
         }
     }
 
+    /**
+     * @return array<string, list<string>>
+     */
     private function readExisting(string $psr4File): array
     {
         if (!file_exists($psr4File)) {
@@ -37,6 +43,7 @@ final readonly class AutoloadPatcher
             return [];
         }
 
+        /** @var array<string, list<string>> $validated */
         $validated = [];
 
         foreach ($result as $namespace => $paths) {
@@ -48,6 +55,7 @@ final readonly class AutoloadPatcher
                 continue;
             }
 
+            /** @var list<string> $stringPaths */
             $stringPaths = array_values(array_filter($paths, is_string(...)));
 
             if ($stringPaths !== []) {
@@ -58,6 +66,9 @@ final readonly class AutoloadPatcher
         return $validated;
     }
 
+    /**
+     * @param array<string, list<string>> $merged
+     */
     private function writePsr4File(string $psr4File, array $merged): void
     {
         $vendorDir = $this->vendorDir;
@@ -83,6 +94,9 @@ final readonly class AutoloadPatcher
         file_put_contents($psr4File, $content);
     }
 
+    /**
+     * @param array<string, list<string>> $additions  namespace → absolute paths
+     */
     private function hookRealFile(string $realFile, array $additions): void
     {
         $content = @file_get_contents($realFile);
@@ -123,6 +137,9 @@ final readonly class AutoloadPatcher
         return substr($content, 0, $start) . substr($content, $end);
     }
 
+    /**
+     * @param array<string, list<string>> $additions
+     */
     private function buildHook(array $additions, string $baseDir): string
     {
         $lines   = [];

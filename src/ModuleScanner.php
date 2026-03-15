@@ -14,6 +14,9 @@ final readonly class ModuleScanner
         private string $rootDir,
     ) {}
 
+    /**
+     * @return array<string, list<string>>  namespace → [absolute paths]
+     */
     public function scan(): array
     {
         $modulesDir = $this->rootDir . '/' . self::MODULES_DIR;
@@ -22,6 +25,7 @@ final readonly class ModuleScanner
             return [];
         }
 
+        /** @var array<string, list<string>> $additions */
         $additions = [];
 
         foreach (new DirectoryIterator($modulesDir) as $entry) {
@@ -33,9 +37,7 @@ final readonly class ModuleScanner
                 continue;
             }
 
-            $result = $this->scanModule($entry->getPathname());
-
-            foreach ($result as $namespace => $paths) {
+            foreach ($this->scanModule($entry->getPathname()) as $namespace => $paths) {
                 $additions[$namespace] = $paths;
             }
         }
@@ -44,7 +46,7 @@ final readonly class ModuleScanner
     }
 
     /**
-     * @codeCoverageIgnore
+     * @return array<string, list<string>>
      */
     private function scanModule(string $modulePath): array
     {
@@ -78,6 +80,7 @@ final readonly class ModuleScanner
             return [];
         }
 
+        /** @var array<string, list<string>> $additions */
         $additions = [];
 
         foreach ($psr4 as $namespace => $relativePath) {
@@ -87,7 +90,9 @@ final readonly class ModuleScanner
 
             $paths = is_array($relativePath) ? $relativePath : [$relativePath];
 
+            /** @var list<string> $resolved */
             $resolved = [];
+
             foreach ($paths as $p) {
                 if (is_string($p)) {
                     $resolved[] = $modulePath . '/' . rtrim($p, '/');
